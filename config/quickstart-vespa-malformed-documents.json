@@ -1,0 +1,22 @@
+{
+  "config": {
+    "name": "VespaSinkConnector1",
+    "connector.class": "com.vinted.kafka.connect.vespa.VespaSinkConnector",
+    "tasks.max": "1",
+    "topics": "music",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "vespa.url": "http://vespa:8080/",
+    "vespa.namespace": "mynamespace",
+    "vespa.document.type": "music",
+    "vespa.dryrun": "false",
+    "vespa.drop.invalid.message": "true",
+    "vespa.behavior.on.malformed.documents": "WARN",
+    "errors.tolerance": "all",
+    "errors.log.enable": "true",
+    "errors.log.include.messages": "true",
+    "errors.deadletterqueue.topic.name": "dlq",
+    "errors.deadletterqueue.topic.replication.factor": 1,
+    "errors.deadletterqueue.context.headers.enable": "true"
+  }
+}
