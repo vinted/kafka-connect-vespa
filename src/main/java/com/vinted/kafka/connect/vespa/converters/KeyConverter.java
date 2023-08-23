@@ -14,7 +14,7 @@ public class KeyConverter {
             throw new DataException("Key is used as document id and can not be null.");
         }
 
-        if (String.valueOf(key).isBlank()) {
+        if (String.valueOf(key).isEmpty()) {
             throw new DataException("Key is used as document id and can not be empty.");
         }
 
