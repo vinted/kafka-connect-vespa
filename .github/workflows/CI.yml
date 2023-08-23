@@ -28,8 +28,8 @@ jobs:
         uses: scacap/action-surefire-report@v1
       - name: Package with maven
         run: mvn package
-      - run: mkdir artifact && cp target/*.jar artifact
+      - run: mkdir artifact && cp target/components/*.jar artifact && cp target/components/packages/*.zip artifact
       - uses: actions/upload-artifact@v2
         with:
-          name: Package
+          name: Artifacts
           path: artifact
