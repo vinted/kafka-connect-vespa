@@ -47,37 +47,37 @@ public class VespaResultCallbackHandler {
                 .findFirst()
                 .orElse(throwable);
 
+        Result success = new Result() {
+            @Override
+            public Type type() {
+                return Type.success;
+            }
+
+            @Override
+            public DocumentId documentId() {
+                return null;
+            }
+
+            @Override
+            public Optional<String> resultMessage() {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<String> traceMessage() {
+                return Optional.empty();
+            }
+        };
+
         boolean isMalformed = rootCause.toString().toLowerCase().contains("status 400")
                 || rootCause instanceof OperationParseException
                 || rootCause instanceof JsonParseException;
 
         if (isMalformed) {
-            Result success = new Result() {
-                @Override
-                public Type type() {
-                    return Type.success;
-                }
-
-                @Override
-                public DocumentId documentId() {
-                    return null;
-                }
-
-                @Override
-                public Optional<String> resultMessage() {
-                    return Optional.empty();
-                }
-
-                @Override
-                public Optional<String> traceMessage() {
-                    return Optional.empty();
-                }
-            };
-
             return handleMalformed(record, success, throwable);
         }
 
-        log.error(errorMessage(record), throwable);
+        log.error(errorMessage(record, success), throwable);
 
         throw new ConnectException(throwable);
     }
@@ -94,7 +94,7 @@ public class VespaResultCallbackHandler {
                 return result;
             case FAIL:
             default:
-                log.error(errorMessage(record), throwable);
+                log.error(errorMessage(record, result), throwable);
                 throw new ConnectException(throwable);
         }
     }
@@ -103,10 +103,13 @@ public class VespaResultCallbackHandler {
         return String.format("Failed to index document '%s'. Ignoring and will not index it.", record);
     }
 
-    private String errorMessage(SinkRecord record) {
+    private String errorMessage(SinkRecord record, Result result) {
         return String.format(
-                "Failed to index document '%s'. To ignore future document like this, change the configuration '%s' to '%s'.",
+                "Failed to index document '%s'. ResultMessage: '%s'. Trace: '%s'. "
+                        + "To ignore future document like this, change the configuration '%s' to '%s'.",
                 record,
+                result.resultMessage(),
+                result.traceMessage(),
                 VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG,
                 VespaSinkConfig.BehaviorOnMalformedDoc.IGNORE
         );
