@@ -19,14 +19,17 @@ confluent-hub install --no-prompt /tmp/vinted-kafka-connect-vespa-1.0.2-SNAPSHOT
 
 ### Important
 
-This connector expects records from Kafka to have a key and value. Values can be converted using byte, string or JSON
-converters. Topic names are used as document types, use single message transforms to transform topic names into desired
-document types.
+This connectors can work in two modes, `UPSERT` and `RAW`. In upsert mode, the connector expects records from Kafka to
+have a key and value. The key is used as the document ID and the value is used as the document body. In raw mode, the
+connector will execute kafka messages as vespa document api operations using document JSON format.
 
 ### Note
 
-This connector supports deletes. If the record stored in Kafka has a null value, this connector will delete document
-with the corresponding key to Vespa.
+Under upsert mode connector supports deletes, if the record stored in Kafka has a null value, this connector will
+delete document with the corresponding key to Vespa.
+
+Under upsert mode, document keys are constructed using the following format: `namespace:documenttype:id`. Namespace and
+document type are taken from the connector and kafka record is used as the id.
 
 ### Configuration
 
