@@ -4,6 +4,19 @@
 
 The Vespa Sink Connector is used to write data from Kafka to a Vespa search engine.
 
+### Installation
+
+This connector has not yet been published to Confluent Hub. To install it, download the latest component package and
+install it using `confluent-hub` command line tool.
+
+```sh
+wget https://github.com/vinted/kafka-connect-vespa/releases/download/v1.0.2/vinted-kafka-connect-vespa-1.0.2-SNAPSHOT.zip -O /tmp/vinted-kafka-connect-vespa-1.0.2-SNAPSHOT.zip -q
+```
+
+```sh
+confluent-hub install --no-prompt /tmp/vinted-kafka-connect-vespa-1.0.2-SNAPSHOT.zip
+```
+
 ### Important
 
 This connector expects records from Kafka to have a key and value. Values can be converted using byte, string or JSON
@@ -19,7 +32,7 @@ with the corresponding key to Vespa.
 
 # Connector
 
-`vespa.endpoint`  
+`vespa.endpoint`
 The comma-separated list of one or more Vespa URLs, such as
 `https://node1:8080,http://node2:8080` or `https://node3:8080`. HTTPS is
 used for all connections if any of the URLs starts with `https:`. A URL
@@ -30,7 +43,7 @@ without a protocol is treated as `http`.
 - Valid Values:
 - Importance: high
 
-`vespa.connections.per.endpoint`  
+`vespa.connections.per.endpoint`
 A reasonable value here is a value that lets all feed clients (if more
 than one) Sets the number of connections this client will use
 collectively have a number of connections which is a small multiple of
@@ -44,7 +57,7 @@ also warrant a higher number of connections.
 - Valid Values: \[1,...\]
 - Importance: low
 
-`vespa.max.streams.per.connection`  
+`vespa.max.streams.per.connection`
 This determines the maximum number of concurrent, inflight requests for
 this Sets the maximum number of streams per HTTP/2 client, which is
 maxConnections \* maxStreamsPerConnection. Prefer more streams over more
@@ -57,7 +70,7 @@ connection is usually lower than the maximum.
 - Valid Values: \[1,...\]
 - Importance: low
 
-`vespa.dryrun`  
+`vespa.dryrun`
 Turns on dryrun mode, where each operation succeeds after a given delay,
 rather than being sent across the network.
 
@@ -65,7 +78,7 @@ rather than being sent across the network.
 - Default: false
 - Importance: low
 
-`vespa.speedtest`  
+`vespa.speedtest`
 Turns on speed test mode, where each operation succeeds immediately,
 rather than being sent across the network.
 
@@ -73,7 +86,7 @@ rather than being sent across the network.
 - Default: false
 - Importance: low
 
-`vespa.max.failure.ms`  
+`vespa.max.failure.ms`
 The period of consecutive failures before shutting down.
 
 - Type: int
@@ -81,7 +94,7 @@ The period of consecutive failures before shutting down.
 - Valid Values: \[10000,...\]
 - Importance: low
 
-`vespa.namespace`  
+`vespa.namespace`
 User specified part of each document ID in that sense. Namespace can not
 be used in queries, other than as part of the full document ID. However,
 it can be used for document selection, where id.namespace can be
@@ -93,7 +106,7 @@ case is visiting a subset of documents.
 - Valid Values: non-empty string without ISO control characters
 - Importance: high
 
-`vespa.document.type`  
+`vespa.document.type`
 Document type as defined in services.xml and the schema.
 
 - Type: string
@@ -101,7 +114,7 @@ Document type as defined in services.xml and the schema.
 - Valid Values: non-empty string without ISO control characters
 - Importance: high
 
-`vespa.operational.mode`  
+`vespa.operational.mode`
 The operational mode of the connector. Valid options are upsert and raw.
 Upsert mode will update existing documents and insert new documents,
 tombstones messages will be converted to delete operations. Raw mode
@@ -115,7 +128,7 @@ executes all operations using document json format as explained in
 
 # Operation
 
-`vespa.operation.retries`  
+`vespa.operation.retries`
 Number of retries per operation for assumed transient, non-backpressure
 problems.
 
@@ -124,7 +137,7 @@ problems.
 - Valid Values: \[0,...,2147483647\]
 - Importance: low
 
-`vespa.operation.timeout.ms`  
+`vespa.operation.timeout.ms`
 Feed operation timeout.
 
 - Type: int
@@ -132,7 +145,7 @@ Feed operation timeout.
 - Valid Values: \[0,...,2147483647\]
 - Importance: low
 
-`vespa.operation.route`  
+`vespa.operation.route`
 Target Vespa route for feed operations.
 
 - Type: string
@@ -140,7 +153,7 @@ Target Vespa route for feed operations.
 - Valid Values: non-empty string without ISO control characters
 - Importance: low
 
-`vespa.operation.tracelevel`  
+`vespa.operation.tracelevel`
 The trace level of network traffic.
 
 - Type: int
@@ -150,7 +163,7 @@ The trace level of network traffic.
 
 # Data Conversion
 
-`vespa.drop.invalid.message`  
+`vespa.drop.invalid.message`
 Whether to drop kafka message when it cannot be converted to output
 message.
 
@@ -158,7 +171,7 @@ message.
 - Default: false
 - Importance: low
 
-`vespa.behavior.on.malformed.documents`  
+`vespa.behavior.on.malformed.documents`
 How to handle records that Vespa rejects due to document malformation.
 Valid options are ignore', 'warn', and 'fail'.
 
