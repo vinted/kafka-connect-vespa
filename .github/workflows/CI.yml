@@ -12,15 +12,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Set up JDK 8
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
           java-version: '8'
           distribution: 'temurin'
           cache: maven
       - name: Build with Maven
         run: mvn compile
+      - id: project
+        name: Extract Maven project version
+        run: echo "version=$(mvn -q -Dexec.executable=echo -Dexec.args='${project.version}' --non-recursive exec:exec)" >> "$GITHUB_OUTPUT"
       - name: Test with Maven
         run: mvn test --batch-mode --fail-at-end
       - name: Publish Test Report
@@ -28,8 +31,11 @@ jobs:
         uses: scacap/action-surefire-report@v1
       - name: Package with maven
         run: mvn package
-      - run: mkdir artifact && cp target/components/*.jar artifact && cp target/components/packages/*.zip artifact
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         with:
-          name: Artifacts
-          path: artifact
+          name: vinted-kafka-connect-vespa-${{ steps.project.outputs.version }}.jar
+          path: target/components/kafka-connect-vespa-${{ steps.project.outputs.version }}.jar
+      - uses: actions/upload-artifact@v3
+        with:
+          name: vinted-kafka-connect-vespa-${{ steps.project.outputs.version }}.zip
+          path: target/components/packages/vinted-kafka-connect-vespa-${{ steps.project.outputs.version }}.zip
