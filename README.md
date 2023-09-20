@@ -10,11 +10,11 @@ This connector has not yet been published to Confluent Hub. To install it, downl
 install it using `confluent-hub` command line tool.
 
 ```sh
-wget https://github.com/vinted/kafka-connect-vespa/releases/download/v1.0.2/vinted-kafka-connect-vespa-1.0.2-SNAPSHOT.zip -O /tmp/vinted-kafka-connect-vespa-1.0.2-SNAPSHOT.zip -q
+wget https://github.com/vinted/kafka-connect-vespa/releases/download/v1.0.3/vinted-kafka-connect-vespa-1.0.3-SNAPSHOT.zip -O /tmp/vinted-kafka-connect-vespa-1.0.3-SNAPSHOT.zip -q
 ```
 
 ```sh
-confluent-hub install --no-prompt /tmp/vinted-kafka-connect-vespa-1.0.2-SNAPSHOT.zip
+confluent-hub install --no-prompt /tmp/vinted-kafka-connect-vespa-1.0.3-SNAPSHOT.zip
 ```
 
 ### Important
@@ -62,8 +62,8 @@ also warrant a higher number of connections.
 
 `vespa.max.streams.per.connection`
 This determines the maximum number of concurrent, in-flight requests for
-this Sets the maximum number of streams per HTTP/2 client, which is
-maxConnections \* maxStreamsPerConnection. Prefer more streams over more
+these Sets the maximum number of streams per HTTP/2 client, which is
+maxConnections \* maxStreamsPerConnection. Prefer more streams to more
 connections, when possible. The feed client automatically throttles load
 to achieve the best throughput, and the actual number of streams per
 connection is usually lower than the maximum.
@@ -100,7 +100,7 @@ The period of consecutive failures before shutting down.
 `vespa.namespace`
 User specified part of each document ID in that sense. Namespace can not
 be used in queries, other than as part of the full document ID. However,
-it can be used for document selection, where id.namespace can be
+it can be used for document selection, where namespace can be
 accessed and compared to a given string, for instance. An example use
 case is visiting a subset of documents. Defaults to topic name if not specified.
 
@@ -183,6 +183,9 @@ Valid options are ignore', 'warn', and 'fail'.
 
 #### Examples
 
+Connector configuration examples can be found in the [config](config) directory. But here are some quick ones to get
+started.
+
 ##### Standalone Example
 
 This configuration is used typically along
@@ -196,8 +199,8 @@ topics=music
 key.converter=org.apache.kafka.connect.storage.StringConverter
 value.converter=org.apache.kafka.connect.storage.StringConverter
 vespa.endpoint=http://vespa:8080/
-vespa.namespace=mynamespace
-vespa.document.type=mydocumenttype
+vespa.namespace=default
+vespa.document.type=music
 ```
 
 ##### Distributed Example
@@ -216,23 +219,23 @@ the distributed connect worker(s).
     "key.converter": "org.apache.kafka.connect.storage.StringConverter",
     "value.converter": "org.apache.kafka.connect.storage.StringConverter",
     "vespa.endpoint": "http://vespa:8080/",
-    "vespa.namespace": "mynamespace",
-    "vespa.document.type": "mydocumenttype"
+    "vespa.namespace": "default",
+    "vespa.document.type": "music"
   }
 }
 ```
 
-Use curl to post the configuration to one of the Kafka Connect Workers. Change `http://localhost:8088/` the endpoint of
+Use curl to post the configuration to one of the Kafka Connect Workers. Change `http://localhost:8083/` the endpoint of
 one of your Kafka Connect worker(s).
 
 Create a new instance.
 
 ```bash
-curl -s -X POST -H 'Content-Type: application/json' --data @connector.json http://localhost:8088/connectors
+curl -s -X POST -H 'Content-Type: application/json' --data @connector.json http://localhost:8083/connectors
 ```
 
 Update an existing instance.
 
 ```bash
-curl -s -X PUT -H 'Content-Type: application/json' --data @connector.json http://localhost:8088/connectors/TestSinkConnector1/config
+curl -s -X PUT -H 'Content-Type: application/json' --data @connector.json http://localhost:8083/connectors/TestSinkConnector1/config
 ```
