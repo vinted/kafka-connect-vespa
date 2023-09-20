@@ -33,9 +33,7 @@ jobs:
         run: mvn package
       - uses: actions/upload-artifact@v3
         with:
-          name: vinted-kafka-connect-vespa-${{ steps.project.outputs.version }}.jar
-          path: target/components/kafka-connect-vespa-${{ steps.project.outputs.version }}.jar
-      - uses: actions/upload-artifact@v3
-        with:
-          name: vinted-kafka-connect-vespa-${{ steps.project.outputs.version }}.zip
-          path: target/components/packages/vinted-kafka-connect-vespa-${{ steps.project.outputs.version }}.zip
+          name: kafka-connect-vespa-${{ steps.project.outputs.version }}
+          path: |
+            target/components/kafka-connect-vespa-${{ steps.project.outputs.version }}.jar
+            target/components/packages/vinted-kafka-connect-vespa-${{ steps.project.outputs.version }}.zip
