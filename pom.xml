@@ -17,7 +17,7 @@
         <log4j.version>2.17.1</log4j.version>
         <slf4j.version>1.7.30</slf4j.version>
         <confluent-log4j.version>1.2.17-cp2</confluent-log4j.version>
-        <vespa.version>8.198.18</vespa.version>
+        <vespa.version>8.226.19</vespa.version>
         <connect.utils.version>0.7.177</connect.utils.version>
         <junit.version>5.9.3</junit.version>
     </properties>
