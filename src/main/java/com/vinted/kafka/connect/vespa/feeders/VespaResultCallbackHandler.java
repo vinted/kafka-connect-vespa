@@ -87,7 +87,7 @@ public class VespaResultCallbackHandler {
 
         switch (config.behaviorOnMalformedDoc) {
             case IGNORE:
-                log.debug(ignoreMessage(record), throwable);
+                log.info(ignoreMessage(record), throwable);
                 return result;
             case WARN:
                 log.warn(ignoreMessage(record), throwable);
@@ -105,8 +105,7 @@ public class VespaResultCallbackHandler {
 
     private String errorMessage(SinkRecord record, Result result) {
         return String.format(
-                "Failed to index document '%s'. ResultMessage: '%s'. Trace: '%s'. "
-                        + "To ignore future document like this, change the configuration '%s' to '%s'.",
+                "Failed to index document '%s'. ResultMessage: '%s'. Trace: '%s'. To ignore future document like this, change the configuration '%s' to '%s'.",
                 record,
                 result.resultMessage(),
                 result.traceMessage(),

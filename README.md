@@ -61,7 +61,7 @@ also warrant a higher number of connections.
 - Importance: low
 
 `vespa.max.streams.per.connection`
-This determines the maximum number of concurrent, inflight requests for
+This determines the maximum number of concurrent, in-flight requests for
 this Sets the maximum number of streams per HTTP/2 client, which is
 maxConnections \* maxStreamsPerConnection. Prefer more streams over more
 connections, when possible. The feed client automatically throttles load
@@ -69,7 +69,7 @@ to achieve the best throughput, and the actual number of streams per
 connection is usually lower than the maximum.
 
 - Type: int
-- Default: 32
+- Default: 128
 - Valid Values: \[1,...\]
 - Importance: low
 
@@ -102,19 +102,17 @@ User specified part of each document ID in that sense. Namespace can not
 be used in queries, other than as part of the full document ID. However,
 it can be used for document selection, where id.namespace can be
 accessed and compared to a given string, for instance. An example use
-case is visiting a subset of documents.
+case is visiting a subset of documents. Defaults to topic name if not specified.
 
 - Type: string
-- Default: mynamespace
-- Valid Values: non-empty string without ISO control characters
+- Default: \"\"
 - Importance: high
 
 `vespa.document.type`
-Document type as defined in services.xml and the schema.
+Document type as defined in services.xml and the schema. Defaults to topic name if not specified.
 
 - Type: string
-- Default: mydocumenttype
-- Valid Values: non-empty string without ISO control characters
+- Default: \"\"
 - Importance: high
 
 `vespa.operational.mode`

@@ -5,11 +5,13 @@ import com.github.jcustenborder.kafka.connect.utils.config.Description;
 import com.github.jcustenborder.kafka.connect.utils.config.DocumentationImportant;
 import com.github.jcustenborder.kafka.connect.utils.config.DocumentationNote;
 import com.github.jcustenborder.kafka.connect.utils.config.Title;
+import com.google.common.collect.ImmutableList;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.connect.connector.Task;
 import org.apache.kafka.connect.sink.SinkConnector;
 
-import java.util.Collections;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,7 +37,13 @@ public class VespaSinkConnector extends SinkConnector {
 
     @Override
     public List<Map<String, String>> taskConfigs(int maxTasks) {
-        return Collections.nCopies(maxTasks, props);
+        final List<Map<String, String>> taskConfigs = new ArrayList<>(maxTasks);
+
+        for (int i = 0; i < maxTasks; i++) {
+            taskConfigs.add(new HashMap<>(props));
+        }
+
+        return ImmutableList.copyOf(taskConfigs);
     }
 
     @Override
