@@ -12,22 +12,22 @@ import java.util.*;
 
 public class VespaRawSinkTaskTest {
     private long offset = 1;
-    private SinkRecord lastRecord;
-    private Map<String, String> params;
-    private MockVespaFeedClient client;
-    private VespaSinkTask task;
+    private final Map<String, String> params = new HashMap<>();
+    private final MockVespaFeedClient client = new MockVespaFeedClient();
+    private final VespaSinkTask task = new VespaSinkTask();
 
     @BeforeEach
     void before() {
-        params = new HashMap<>();
         params.put(VespaSinkConfig.NAMESPACE_CONFIG, "test_namespace");
         params.put(VespaSinkConfig.DOCUMENT_TYPE_CONFIG, "test_document_type");
         params.put(VespaSinkConfig.OPERATIONAL_MODE_CONFIG, VespaSinkConfig.OperationalMode.RAW.name());
         params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, VespaSinkConfig.BehaviorOnMalformedDoc.WARN.name());
-
-        client = new MockVespaFeedClient();
-        task = new VespaSinkTask();
         task.start(params, client);
+    }
+
+    @AfterEach
+    void after() {
+        this.task.stop();
     }
 
     @Test
@@ -71,13 +71,6 @@ public class VespaRawSinkTaskTest {
         task.put(records);
     }
 
-    @AfterEach
-    void after() {
-        if (this.task != null) {
-            this.task.stop();
-        }
-    }
-
     private SinkRecord record(String key, String value) {
         final Schema keySchema = Schema.STRING_SCHEMA;
         final Schema valueSchema;
@@ -89,6 +82,6 @@ public class VespaRawSinkTaskTest {
             valueSchema = Schema.STRING_SCHEMA;
         }
 
-        return lastRecord = new SinkRecord("topic", 1, keySchema, key, valueSchema, value, offset++);
+        return new SinkRecord("topic", 1, keySchema, key, valueSchema, value, offset++);
     }
 }

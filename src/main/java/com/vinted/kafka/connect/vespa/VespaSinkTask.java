@@ -48,26 +48,42 @@ public class VespaSinkTask extends SinkTask {
 
         switch (config.operationalMode) {
             case UPSERT:
+                log.info("Using upsert operational mode.");
                 feeder = new VespaUpsertFeeder(this.client, parameters, reporter, config);
                 break;
             case RAW:
+                log.info("Using raw operational mode.");
                 feeder = new VespaRawFeeder(this.client, parameters, reporter, config);
                 break;
             default:
+                log.error("Unknown operational mode: {}", config.operationalMode);
                 throw new ConnectException(String.format("Unknown operational mode: %s", config.operationalMode));
         }
     }
 
     @Override
     public void put(Collection<SinkRecord> collection) {
+        if (collection.isEmpty()) {
+            return;
+        }
+
         log.debug("Putting {} records.", collection.size());
 
-        feeder.feed(collection);
+        try {
+            feeder.feed(collection);
+        } catch (Exception e) {
+            log.error("Error feeding records to Vespa.", e);
+            throw new ConnectException(e);
+        }
     }
 
     @Override
     public void stop() {
         log.info("Stopping Vespa Sink Task.");
+
+        if (feeder == null) {
+            return;
+        }
 
         try {
             feeder.close();

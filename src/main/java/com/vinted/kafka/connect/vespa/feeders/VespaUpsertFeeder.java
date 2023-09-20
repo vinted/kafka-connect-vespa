@@ -14,7 +14,6 @@ import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -57,7 +56,7 @@ public class VespaUpsertFeeder implements VespaFeeder {
     }
 
     @Override
-    public void close() throws IOException {
+    public void close() {
         client.close();
     }
 
@@ -72,7 +71,7 @@ public class VespaUpsertFeeder implements VespaFeeder {
             String key = keyConverter.convert(record);
             String value = valueConverter.convert(record);
 
-            DocumentId documentId = DocumentId.of(config.namespace, config.documentType, key);
+            DocumentId documentId = DocumentId.of(getNamespace(record), getDocumentType(record), key);
             Operation operation = new Operation(record, documentId, value);
 
             return Stream.of(operation);
@@ -87,6 +86,14 @@ public class VespaUpsertFeeder implements VespaFeeder {
                 throw new DataException(exception);
             }
         }
+    }
+
+    private String getNamespace(SinkRecord record) {
+        return config.namespace.isEmpty() ? record.topic() : config.namespace;
+    }
+
+    private String getDocumentType(SinkRecord record) {
+        return config.namespace.isEmpty() ? record.topic() : config.documentType;
     }
 
     private static class Operation {

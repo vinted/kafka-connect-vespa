@@ -26,15 +26,24 @@ public class VespaSinkConfig extends AbstractConfig {
     private static final String ENDPOINT_DEFAULT = "http://localhost:8080";
 
     public static final String CONNECTIONS_PER_ENDPOINT_CONFIG = "vespa.connections.per.endpoint";
-    private static final String CONNECTIONS_PER_ENDPOINT_DOC = "A reasonable value here is a value that lets all feed clients (if more than one) Sets the number of connections this client will use " + "collectively have a number of connections which is a small multiple of the numbers of containers in the " + "cluster to feed, so load can be balanced across these containers. In general, this value should be kept " + "as low as possible, but poor connectivity between feeder and cluster may also warrant a higher number of " + "connections.";
+    private static final String CONNECTIONS_PER_ENDPOINT_DOC = "A reasonable value here is a value that lets all feed "
+            + "clients (if more than one) Sets the number of connections this client will use "
+            + "collectively have a number of connections which is a small multiple of the numbers of containers in "
+            + "the cluster to feed, so load can be balanced across these containers. In general, this value should "
+            + "be kept as low as possible, but poor connectivity between feeder and cluster may also warrant a higher "
+            + "number of connections.";
     private static final String CONNECTIONS_PER_ENDPOINT_DISPLAY = "Connections per endpoint";
 
     private static final int CONNECTIONS_PER_ENDPOINT_DEFAULT = 8;
 
     public static final String MAX_STREAMS_PER_CONNECTION_CONFIG = "vespa.max.streams.per.connection";
-    private static final String MAX_STREAMS_PER_CONNECTION_DOC = "This determines the maximum number of concurrent, inflight requests for this " + "Sets the maximum number of streams per HTTP/2 " + "client, which is maxConnections * maxStreamsPerConnection. Prefer more streams over more connections, " + "when possible. The feed client automatically throttles load to achieve the best throughput, and the " + "actual number of streams per connection is usually lower than the maximum.";
+    private static final String MAX_STREAMS_PER_CONNECTION_DOC = "This determines the maximum number of concurrent, "
+            + "in-flight requests for this. Sets the maximum number of streams per HTTP/2 "
+            + "client, which is maxConnections * maxStreamsPerConnection. Prefer more streams over more connections, "
+            + "when possible. The feed client automatically throttles load to achieve the best throughput, and the "
+            + "actual number of streams per connection is usually lower than the maximum.";
     private static final String MAX_STREAMS_PER_CONNECTION_DISPLAY = "Max streams per connection";
-    private static final int MAX_STREAMS_PER_CONNECTION_DEFAULT = 32;
+    private static final int MAX_STREAMS_PER_CONNECTION_DEFAULT = 128;
 
     public static final String DRYRUN_CONFIG = "vespa.dryrun";
     private static final String DRYRUN_DOC = "Turns on dryrun mode, where each operation succeeds after a given "
@@ -57,14 +66,15 @@ public class VespaSinkConfig extends AbstractConfig {
     private static final String NAMESPACE_DOC = "User specified part of each document ID in that sense. Namespace can "
             + "not be used in queries, other than as part of the full document ID. However, it can be used for "
             + "document selection, where id.namespace can be accessed and compared to a given string, for instance. "
-            + "An example use case is visiting a subset of documents.";
+            + "An example use case is visiting a subset of documents. Defaults to topic name if not specified.";
     private static final String NAMESPACE_DISPLAY = "Namespace";
-    private static final String NAMESPACE_DEFAULT = "mynamespace";
+    private static final String NAMESPACE_DEFAULT = "";
 
     public static final String DOCUMENT_TYPE_CONFIG = "vespa.document.type";
-    private static final String DOCUMENT_TYPE_DOC = "Document type as defined in services.xml and the schema.";
+    private static final String DOCUMENT_TYPE_DOC = "Document type as defined in services.xml and the schema. "
+            + "Defaults to topic name if not specified";
     private static final String DOCUMENT_TYPE_DISPLAY = "Document type";
-    private static final String DOCUMENT_TYPE_DEFAULT = "mydocumenttype";
+    private static final String DOCUMENT_TYPE_DEFAULT = "";
 
     public static final String OPERATIONAL_MODE_CONFIG = "vespa.operational.mode";
     private static final String OPERATIONAL_MODE_DOC = "The operational mode of the connector. Valid options are "
@@ -195,7 +205,6 @@ public class VespaSinkConfig extends AbstractConfig {
                         NAMESPACE_CONFIG,
                         ConfigDef.Type.STRING,
                         NAMESPACE_DEFAULT,
-                        ConfigDef.NonEmptyStringWithoutControlChars.nonEmptyStringWithoutControlChars(),
                         ConfigDef.Importance.HIGH,
                         NAMESPACE_DOC,
                         CONNECTOR_GROUP,
@@ -206,7 +215,6 @@ public class VespaSinkConfig extends AbstractConfig {
                         DOCUMENT_TYPE_CONFIG,
                         ConfigDef.Type.STRING,
                         DOCUMENT_TYPE_DEFAULT,
-                        ConfigDef.NonEmptyStringWithoutControlChars.nonEmptyStringWithoutControlChars(),
                         ConfigDef.Importance.HIGH,
                         DOCUMENT_TYPE_DOC,
                         CONNECTOR_GROUP,

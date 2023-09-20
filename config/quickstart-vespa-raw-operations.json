@@ -5,10 +5,8 @@
     "tasks.max": "1",
     "topics": "music",
     "key.converter": "org.apache.kafka.connect.storage.StringConverter",
-    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
-    "value.converter.schemas.enable": "false",
+    "value.converter": "org.apache.kafka.connect.storage.StringConverter",
     "vespa.url": "http://vespa:8080/",
-    "vespa.namespace": "default",
-    "vespa.document.type": "music"
+    "vespa.operational.mode": "raw"
   }
 }

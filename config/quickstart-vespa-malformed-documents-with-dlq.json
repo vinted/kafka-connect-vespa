@@ -11,6 +11,12 @@
     "vespa.document.type": "music",
     "vespa.dryrun": "false",
     "vespa.drop.invalid.message": "true",
-    "vespa.behavior.on.malformed.documents": "WARN"
+    "vespa.behavior.on.malformed.documents": "WARN",
+    "errors.tolerance": "all",
+    "errors.log.enable": "true",
+    "errors.log.include.messages": "true",
+    "errors.deadletterqueue.topic.name": "dlq",
+    "errors.deadletterqueue.topic.replication.factor": 1,
+    "errors.deadletterqueue.context.headers.enable": "true"
   }
 }
