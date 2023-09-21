@@ -68,13 +68,13 @@ public class VespaSinkConfig extends AbstractConfig {
             + "document selection, where id.namespace can be accessed and compared to a given string, for instance. "
             + "An example use case is visiting a subset of documents. Defaults to topic name if not specified.";
     private static final String NAMESPACE_DISPLAY = "Namespace";
-    private static final String NAMESPACE_DEFAULT = "";
+    private static final String NAMESPACE_DEFAULT = null;
 
     public static final String DOCUMENT_TYPE_CONFIG = "vespa.document.type";
     private static final String DOCUMENT_TYPE_DOC = "Document type as defined in services.xml and the schema. "
             + "Defaults to topic name if not specified";
     private static final String DOCUMENT_TYPE_DISPLAY = "Document type";
-    private static final String DOCUMENT_TYPE_DEFAULT = "";
+    private static final String DOCUMENT_TYPE_DEFAULT = null;
 
     public static final String OPERATIONAL_MODE_CONFIG = "vespa.operational.mode";
     private static final String OPERATIONAL_MODE_DOC = "The operational mode of the connector. Valid options are "
@@ -116,7 +116,7 @@ public class VespaSinkConfig extends AbstractConfig {
 
     public static final String BEHAVIOR_ON_MALFORMED_DOCS_CONFIG = "vespa.behavior.on.malformed.documents";
     private static final String BEHAVIOR_ON_MALFORMED_DOCS_DOC = "How to handle records that Vespa rejects due to "
-            + "document malformation. Valid options are ignore', 'warn', and 'fail'.";
+            + "document malformation. Valid options are `ignore`, `warn`, and `fail`.";
     private static final String BEHAVIOR_ON_MALFORMED_DOCS_DISPLAY = "Behavior on malformed documents";
     private static final BehaviorOnMalformedDoc BEHAVIOR_ON_MALFORMED_DOCS_DEFAULT = BehaviorOnMalformedDoc.FAIL;
 
@@ -205,6 +205,7 @@ public class VespaSinkConfig extends AbstractConfig {
                         NAMESPACE_CONFIG,
                         ConfigDef.Type.STRING,
                         NAMESPACE_DEFAULT,
+                        ConfigDef.NonEmptyStringWithoutControlChars.nonEmptyStringWithoutControlChars(),
                         ConfigDef.Importance.HIGH,
                         NAMESPACE_DOC,
                         CONNECTOR_GROUP,
@@ -215,6 +216,7 @@ public class VespaSinkConfig extends AbstractConfig {
                         DOCUMENT_TYPE_CONFIG,
                         ConfigDef.Type.STRING,
                         DOCUMENT_TYPE_DEFAULT,
+                        ConfigDef.NonEmptyStringWithoutControlChars.nonEmptyStringWithoutControlChars(),
                         ConfigDef.Importance.HIGH,
                         DOCUMENT_TYPE_DOC,
                         CONNECTOR_GROUP,

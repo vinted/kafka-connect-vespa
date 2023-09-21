@@ -89,11 +89,11 @@ public class VespaUpsertFeeder implements VespaFeeder {
     }
 
     private String getNamespace(SinkRecord record) {
-        return config.namespace.isEmpty() ? record.topic() : config.namespace;
+        return config.namespace == null ? record.topic() : config.namespace;
     }
 
     private String getDocumentType(SinkRecord record) {
-        return config.namespace.isEmpty() ? record.topic() : config.documentType;
+        return config.documentType == null ? record.topic() : config.documentType;
     }
 
     private static class Operation {

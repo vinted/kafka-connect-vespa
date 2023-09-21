@@ -105,14 +105,14 @@ accessed and compared to a given string, for instance. An example use
 case is visiting a subset of documents. Defaults to topic name if not specified.
 
 - Type: string
-- Default: \"\"
+- Default: null
 - Importance: high
 
 `vespa.document.type`
 Document type as defined in services.xml and the schema. Defaults to topic name if not specified.
 
 - Type: string
-- Default: \"\"
+- Default: null
 - Importance: high
 
 `vespa.operational.mode`
@@ -174,7 +174,7 @@ message.
 
 `vespa.behavior.on.malformed.documents`
 How to handle records that Vespa rejects due to document malformation.
-Valid options are ignore', 'warn', and 'fail'.
+Valid options are `ignore`, `warn`, and `fail`.
 
 - Type: string
 - Default: FAIL
