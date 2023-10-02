@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.vinted.kafka.connect.vespa</groupId>
     <artifactId>kafka-connect-vespa</artifactId>
-    <version>1.0.4-SNAPSHOT</version>
+    <version>1.0.5-SNAPSHOT</version>
     <name>kafka-connect-vespa</name>
     <description>The Vespa Sink Connector is used to write data from Kafka to a Vespa search engine.</description>
     <url>https://github.com/vinted/kafka-connect-vespa</url>
