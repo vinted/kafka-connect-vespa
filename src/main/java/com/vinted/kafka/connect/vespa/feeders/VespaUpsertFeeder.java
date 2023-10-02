@@ -29,7 +29,7 @@ public class VespaUpsertFeeder implements VespaFeeder {
     private final KeyConverter keyConverter;
     private final ValueConverter valueConverter;
     private final VespaReporter reporter;
-    private final VespaResultCallbackHandler resultCallbackHandler;
+    private final VespaFeederHandler vespaFeederHandler;
 
     public VespaUpsertFeeder(FeedClient client, OperationParameters parameters, VespaReporter reporter, VespaSinkConfig config) {
         this.config = config;
@@ -38,7 +38,7 @@ public class VespaUpsertFeeder implements VespaFeeder {
         this.keyConverter = new KeyConverter();
         this.valueConverter = new ValueConverter();
         this.reporter = reporter;
-        this.resultCallbackHandler = new VespaResultCallbackHandler(log, config, reporter);
+        this.vespaFeederHandler = new VespaFeederHandler(log, config, reporter);
     }
 
     @Override
@@ -61,9 +61,7 @@ public class VespaUpsertFeeder implements VespaFeeder {
     }
 
     private CompletableFuture<Result> feedSingle(Operation operation) {
-        return operation
-                .feed(client, parameters)
-                .handle((result, throwable) -> resultCallbackHandler.handle(operation.record, result, throwable));
+        return vespaFeederHandler.handle(operation.record, operation.feed(client, parameters));
     }
 
     private Stream<Operation> toOperation(SinkRecord record) {
