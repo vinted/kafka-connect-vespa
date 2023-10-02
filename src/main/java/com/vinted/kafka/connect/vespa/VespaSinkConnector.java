@@ -1,6 +1,5 @@
 package com.vinted.kafka.connect.vespa;
 
-import com.github.jcustenborder.kafka.connect.utils.VersionUtil;
 import com.github.jcustenborder.kafka.connect.utils.config.Description;
 import com.github.jcustenborder.kafka.connect.utils.config.DocumentationImportant;
 import com.github.jcustenborder.kafka.connect.utils.config.DocumentationNote;
@@ -58,6 +57,6 @@ public class VespaSinkConnector extends SinkConnector {
 
     @Override
     public String version() {
-        return VersionUtil.version(this.getClass());
+        return VespaSinkConnectorVersion.getVersion();
     }
 }
