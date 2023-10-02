@@ -21,7 +21,7 @@ public class VespaRawFeeder implements VespaFeeder {
 
     private final JsonFeeder feeder;
     private final ValueConverter valueConverter;
-    private final VespaResultCallbackHandler resultCallbackHandler;
+    private final VespaFeederHandler vespaFeederHandler;
 
     public VespaRawFeeder(FeedClient client, OperationParameters parameters, VespaReporter reporter, VespaSinkConfig config) {
         JsonFeeder.Builder builder = JsonFeeder.builder(client);
@@ -32,7 +32,7 @@ public class VespaRawFeeder implements VespaFeeder {
 
         this.feeder = builder.build();
         this.valueConverter = new ValueConverter();
-        this.resultCallbackHandler = new VespaResultCallbackHandler(log, config, reporter);
+        this.vespaFeederHandler = new VespaFeederHandler(log, config, reporter);
     }
 
     @Override
@@ -46,9 +46,6 @@ public class VespaRawFeeder implements VespaFeeder {
     }
 
     private CompletableFuture<Result> feedSingle(SinkRecord record) {
-        return CompletableFuture
-                .supplyAsync(() -> valueConverter.convert(record))
-                .thenCompose(feeder::feedSingle)
-                .handle((result, throwable) -> resultCallbackHandler.handle(record, result, throwable));
+        return vespaFeederHandler.handle(record, feeder.feedSingle(valueConverter.convert(record)));
     }
 }
