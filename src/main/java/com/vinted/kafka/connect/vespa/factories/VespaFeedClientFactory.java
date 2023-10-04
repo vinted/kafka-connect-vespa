@@ -19,8 +19,13 @@ public class VespaFeedClientFactory {
                 .setCircuitBreaker(new GracePeriodCircuitBreaker(Duration.ofSeconds(10), config.maxFailureDuration))
                 .setRetryStrategy(new FeedClient.RetryStrategy() {
                     @Override
+                    public boolean retry(FeedClient.OperationType type) {
+                        return config.retryStrategyOperationsTypes.contains(type);
+                    }
+
+                    @Override
                     public int retries() {
-                        return config.retries;
+                        return config.retryStrategyRetries;
                     }
                 })
                 .build();

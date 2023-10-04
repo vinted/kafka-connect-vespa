@@ -2,7 +2,6 @@ package com.vinted.kafka.connect.vespa.factories;
 
 import ai.vespa.feed.client.OperationParameters;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -12,12 +11,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class VespaOperationParametersFactoryTest {
-    Map<String, String> params;
-
-    @BeforeEach
-    void setup() {
-        params = new HashMap<>();
-    }
+    private final Map<String, String> params = new HashMap<>();
 
     @Test
     void defaultsToMinuteTimeout() {

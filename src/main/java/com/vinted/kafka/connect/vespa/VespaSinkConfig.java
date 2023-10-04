@@ -1,5 +1,6 @@
 package com.vinted.kafka.connect.vespa;
 
+import ai.vespa.feed.client.FeedClient;
 import com.github.jcustenborder.kafka.connect.utils.config.ConfigUtils;
 import com.github.jcustenborder.kafka.connect.utils.config.validators.Validators;
 import org.apache.kafka.common.config.AbstractConfig;
@@ -7,9 +8,7 @@ import org.apache.kafka.common.config.ConfigDef;
 
 import java.net.URI;
 import java.time.Duration;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static org.apache.kafka.common.config.ConfigDef.Range.atLeast;
@@ -19,9 +18,8 @@ public class VespaSinkConfig extends AbstractConfig {
     // Connector group
     public static final String ENDPOINT_CONFIG = "vespa.endpoint";
     private static final String ENDPOINT_DOC = "The comma-separated list of one or more Vespa URLs, such as "
-            + "``https://node1:8080,http://node2:8080`` or ``https://node3:8080``. HTTPS is used for all connections "
-            + "if any of the URLs starts with ``https:``. A URL without a protocol is treated as "
-            + "``http``.";
+            + "`https://node1:8080,http://node2:8080` or `https://node3:8080`. HTTPS is used for all connections "
+            + "if any of the URLs starts with `https:`. A URL without a protocol is treated as `http`.";
     private static final String ENDPOINT_DISPLAY = "Endpoint URLs";
     private static final String ENDPOINT_DEFAULT = "http://localhost:8080";
 
@@ -39,7 +37,7 @@ public class VespaSinkConfig extends AbstractConfig {
     public static final String MAX_STREAMS_PER_CONNECTION_CONFIG = "vespa.max.streams.per.connection";
     private static final String MAX_STREAMS_PER_CONNECTION_DOC = "This determines the maximum number of concurrent, "
             + "in-flight requests for this. Sets the maximum number of streams per HTTP/2 "
-            + "client, which is maxConnections * maxStreamsPerConnection. Prefer more streams over more connections, "
+            + "client, which is maxConnections * maxStreamsPerConnection. Prefer more streams to more connections, "
             + "when possible. The feed client automatically throttles load to achieve the best throughput, and the "
             + "actual number of streams per connection is usually lower than the maximum.";
     private static final String MAX_STREAMS_PER_CONNECTION_DISPLAY = "Max streams per connection";
@@ -65,7 +63,7 @@ public class VespaSinkConfig extends AbstractConfig {
     public static final String NAMESPACE_CONFIG = "vespa.namespace";
     private static final String NAMESPACE_DOC = "User specified part of each document ID in that sense. Namespace can "
             + "not be used in queries, other than as part of the full document ID. However, it can be used for "
-            + "document selection, where id.namespace can be accessed and compared to a given string, for instance. "
+            + "document selection, where namespace can be accessed and compared to a given string, for instance. "
             + "An example use case is visiting a subset of documents. Defaults to topic name if not specified.";
     private static final String NAMESPACE_DISPLAY = "Namespace";
     private static final String NAMESPACE_DEFAULT = null;
@@ -84,13 +82,18 @@ public class VespaSinkConfig extends AbstractConfig {
     private static final String OPERATIONAL_MODE_DISPLAY = "Operational mode";
     private static final OperationalMode OPERATIONAL_MODE_DEFAULT = OperationalMode.UPSERT;
 
-    // Operation group
-    public static final String OPERATION_RETRIES_CONFIG = "vespa.operation.retries";
-    private static final String OPERATION_RETRIES_DOC = "Number of retries per operation for assumed transient, "
-            + "non-backpressure problems.";
-    private static final String OPERATION_RETRIES_DISPLAY = "Max Retries";
-    private static final int OPERATION_RETRIES_DEFAULT = 10;
+    public static final String RETRY_STRATEGY_OPERATION_TYPES_CONFIG = "vespa.retry.strategy.operation.types";
+    private static final String RETRY_STRATEGY_OPERATION_TYPES_DOC = "Operation types to retry.";
+    private static final String RETRY_STRATEGY_OPERATION_TYPES_DISPLAY = "Operation types to retry.";
+    private static final List<FeedClient.OperationType> RETRY_STRATEGY_OPERATION_TYPES_DEFAULT = Arrays.asList(FeedClient.OperationType.values());
 
+    public static final String RETRY_STRATEGY_RETRIES_CONFIG = "vespa.retry.strategy.retries";
+    private static final String RETRY_STRATEGY_RETRIES_DOC = "Number of retries per operation for assumed transient, "
+            + "non-backpressure problems.";
+    private static final String RETRY_STRATEGY_RETRIES_DISPLAY = "Max Retries";
+    private static final int RETRY_STRATEGY_RETRIES_DEFAULT = 10;
+
+    // Operation group
     public static final String OPERATION_TIMEOUT_MS_CONFIG = "vespa.operation.timeout.ms";
     private static final String OPERATION_TIMEOUT_MS_DOC = "Feed operation timeout.";
     private static final String OPERATION_TIMEOUT_MS_DISPLAY = "Operation timeout";
@@ -116,7 +119,7 @@ public class VespaSinkConfig extends AbstractConfig {
 
     public static final String BEHAVIOR_ON_MALFORMED_DOCS_CONFIG = "vespa.behavior.on.malformed.documents";
     private static final String BEHAVIOR_ON_MALFORMED_DOCS_DOC = "How to handle records that Vespa rejects due to "
-            + "document malformation. Valid options are `ignore`, `warn`, and `fail`.";
+            + "document malformation. Valid options are `IGNORE`, `WARN`, and `FAIL`.";
     private static final String BEHAVIOR_ON_MALFORMED_DOCS_DISPLAY = "Behavior on malformed documents";
     private static final BehaviorOnMalformedDoc BEHAVIOR_ON_MALFORMED_DOCS_DEFAULT = BehaviorOnMalformedDoc.FAIL;
 
@@ -233,23 +236,34 @@ public class VespaSinkConfig extends AbstractConfig {
                         CONNECTOR_GROUP,
                         ++order,
                         ConfigDef.Width.MEDIUM,
-                        OPERATIONAL_MODE_DISPLAY);
+                        OPERATIONAL_MODE_DISPLAY)
+                .define(
+                        RETRY_STRATEGY_RETRIES_CONFIG,
+                        ConfigDef.Type.INT,
+                        RETRY_STRATEGY_RETRIES_DEFAULT,
+                        between(0, Integer.MAX_VALUE),
+                        ConfigDef.Importance.LOW,
+                        RETRY_STRATEGY_RETRIES_DOC,
+                        CONNECTOR_GROUP,
+                        ++order,
+                        ConfigDef.Width.SHORT,
+                        RETRY_STRATEGY_RETRIES_DISPLAY)
+                .define(
+                        RETRY_STRATEGY_OPERATION_TYPES_CONFIG,
+                        ConfigDef.Type.LIST,
+                        RETRY_STRATEGY_OPERATION_TYPES_DEFAULT.stream().map(Enum::name).collect(Collectors.joining(",")),
+                        Validators.validEnum(FeedClient.OperationType.class),
+                        ConfigDef.Importance.LOW,
+                        RETRY_STRATEGY_OPERATION_TYPES_DOC,
+                        CONNECTOR_GROUP,
+                        ++order,
+                        ConfigDef.Width.SHORT,
+                        RETRY_STRATEGY_OPERATION_TYPES_DISPLAY);
     }
 
     private static void addOperationConfigs(ConfigDef configDef) {
         int order = 0;
         configDef
-                .define(
-                        OPERATION_RETRIES_CONFIG,
-                        ConfigDef.Type.INT,
-                        OPERATION_RETRIES_DEFAULT,
-                        between(0, Integer.MAX_VALUE),
-                        ConfigDef.Importance.LOW,
-                        OPERATION_RETRIES_DOC,
-                        OPERATION_GROUP,
-                        ++order,
-                        ConfigDef.Width.SHORT,
-                        OPERATION_RETRIES_DISPLAY)
                 .define(
                         OPERATION_TIMEOUT_MS_CONFIG,
                         ConfigDef.Type.INT,
@@ -311,7 +325,8 @@ public class VespaSinkConfig extends AbstractConfig {
                         BEHAVIOR_ON_MALFORMED_DOCS_DISPLAY);
     }
 
-    public final int retries;
+    public final int retryStrategyRetries;
+    public final List<FeedClient.OperationType> retryStrategyOperationsTypes;
     public final int connectionsPerEndpoint;
     public final int maxStreamsPerConnection;
     public final boolean dryrun;
@@ -330,7 +345,8 @@ public class VespaSinkConfig extends AbstractConfig {
     public VespaSinkConfig(Map<String, ?> configProviderProps) {
         super(CONFIG, configProviderProps);
 
-        this.retries = getInt(OPERATION_RETRIES_CONFIG);
+        this.retryStrategyRetries = getInt(RETRY_STRATEGY_RETRIES_CONFIG);
+        this.retryStrategyOperationsTypes = ConfigUtils.getEnums(FeedClient.OperationType.class, this, RETRY_STRATEGY_OPERATION_TYPES_CONFIG);
         this.connectionsPerEndpoint = getInt(CONNECTIONS_PER_ENDPOINT_CONFIG);
         this.maxStreamsPerConnection = getInt(MAX_STREAMS_PER_CONNECTION_CONFIG);
         this.dryrun = getBoolean(DRYRUN_CONFIG);
