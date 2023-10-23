@@ -100,7 +100,10 @@ public class VespaFeederHandler {
                 .findFirst()
                 .orElse(throwable);
 
-        return rootCause.toString().toLowerCase().contains("status 400")
+        String rootCauseString = rootCause.toString().toLowerCase();
+
+        return rootCauseString.contains("status 400")
+                || rootCauseString.contains("string field value contains illegal code point")
                 || rootCause instanceof OperationParseException
                 || rootCause instanceof JsonParseException;
     }
