@@ -29,13 +29,15 @@ public class VespaFeederHandler {
 
         future.whenComplete((result, throwable) -> {
             if (result == null) {
-                reporter.report(record, throwable);
+                // An exception occurred while indexing the document
 
                 if (!isMalformed(throwable)) {
                     log.error(errorMessage(record), throwable);
 
                     promise.completeExceptionally(throwable);
                 } else {
+                    reporter.report(record, throwable);
+
                     switch (config.behaviorOnMalformedDoc) {
                         case IGNORE:
                             log.info(ignoreMessage(record), throwable);
@@ -53,8 +55,12 @@ public class VespaFeederHandler {
                     }
                 }
             } else if (result.type() == Result.Type.success) {
+                // Document was indexed successfully
                 promise.complete(result);
             } else {
+                // Document could not be indexed. Vespa responded with an error message.
+                // This usually is a condition not met error.
+
                 Throwable resultThrowable = new Throwable(result.toString());
 
                 reporter.report(record, resultThrowable);
