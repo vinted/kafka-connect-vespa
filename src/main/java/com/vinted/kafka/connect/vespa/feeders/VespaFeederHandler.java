@@ -3,6 +3,7 @@ package com.vinted.kafka.connect.vespa.feeders;
 import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.OperationParseException;
 import ai.vespa.feed.client.Result;
+import ai.vespa.feed.client.ResultParseException;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.vinted.kafka.connect.vespa.VespaReporter;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
@@ -108,10 +109,11 @@ public class VespaFeederHandler {
 
         String rootCauseString = rootCause.toString().toLowerCase();
 
-        return rootCauseString.contains("status 400")
+        return !(rootCause instanceof ResultParseException)
+                && (rootCauseString.contains("status 400")
                 || rootCauseString.contains("string field value contains illegal code point")
                 || rootCause instanceof OperationParseException
-                || rootCause instanceof JsonParseException;
+                || rootCause instanceof JsonParseException);
     }
 
     private static Result ignoredResult() {
