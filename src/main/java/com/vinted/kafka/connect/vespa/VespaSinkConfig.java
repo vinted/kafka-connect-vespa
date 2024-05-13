@@ -32,7 +32,7 @@ public class VespaSinkConfig extends AbstractConfig {
             + "number of connections.";
     private static final String CONNECTIONS_PER_ENDPOINT_DISPLAY = "Connections per endpoint";
 
-    private static final int CONNECTIONS_PER_ENDPOINT_DEFAULT = 8;
+    private static final int CONNECTIONS_PER_ENDPOINT_DEFAULT = 1;
 
     public static final String MAX_STREAMS_PER_CONNECTION_CONFIG = "vespa.max.streams.per.connection";
     private static final String MAX_STREAMS_PER_CONNECTION_DOC = "This determines the maximum number of concurrent, "
@@ -41,7 +41,7 @@ public class VespaSinkConfig extends AbstractConfig {
             + "when possible. The feed client automatically throttles load to achieve the best throughput, and the "
             + "actual number of streams per connection is usually lower than the maximum.";
     private static final String MAX_STREAMS_PER_CONNECTION_DISPLAY = "Max streams per connection";
-    private static final int MAX_STREAMS_PER_CONNECTION_DEFAULT = 128;
+    private static final int MAX_STREAMS_PER_CONNECTION_DEFAULT = 17;
 
     public static final String DRYRUN_CONFIG = "vespa.dryrun";
     private static final String DRYRUN_DOC = "Turns on dryrun mode, where each operation succeeds after a given "
