@@ -10,11 +10,11 @@ This connector has not yet been published to Confluent Hub. To install it, downl
 install it using `confluent-hub` command line tool.
 
 ```sh
-wget https://github.com/vinted/kafka-connect-vespa/releases/download/v1.0.10/vinted-kafka-connect-vespa-v1.0.10.zip -O /tmp/vinted-kafka-connect-vespa-v1.0.10.zip -q
+wget https://github.com/vinted/kafka-connect-vespa/releases/download/v1.0.11/vinted-kafka-connect-vespa-v1.0.11.zip -O /tmp/vinted-kafka-connect-vespa-v1.0.11.zip -q
 ```
 
 ```sh
-confluent-hub install --no-prompt /tmp/vinted-kafka-connect-vespa-v1.0.10.zip
+confluent-hub install --no-prompt /tmp/vinted-kafka-connect-vespa-v1.0.11.zip
 ```
 
 ### Operational modes
@@ -59,7 +59,7 @@ cluster to feed, so load can be balanced across these containers. In general, th
 possible, but poor connectivity between feeder and cluster may also warrant a higher number of connections.
 
 * Type: int
-* Default: 8
+* Default: 1
 * Valid Values: [1,...]
 * Importance: low
 
@@ -71,7 +71,7 @@ possible. The feed client automatically throttles load to achieve the best throu
 per connection is usually lower than the maximum.
 
 * Type: int
-* Default: 128
+* Default: 16
 * Valid Values: [1,...]
 * Importance: low
 
