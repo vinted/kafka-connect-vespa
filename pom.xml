@@ -5,19 +5,19 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.vinted.kafka.connect.vespa</groupId>
     <artifactId>kafka-connect-vespa</artifactId>
-    <version>1.0.10-SNAPSHOT</version>
+    <version>1.0.11-SNAPSHOT</version>
     <name>kafka-connect-vespa</name>
     <description>The Vespa Sink Connector is used to write data from Kafka to a Vespa search engine.</description>
     <url>https://github.com/vinted/kafka-connect-vespa</url>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>8</maven.compiler.source>
-        <maven.compiler.target>8</maven.compiler.target>
-        <kafka.version>2.8.2</kafka.version>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <kafka.version>3.5.2</kafka.version>
         <log4j.version>2.17.1</log4j.version>
         <slf4j.version>1.7.30</slf4j.version>
         <confluent-log4j.version>1.2.17-cp2</confluent-log4j.version>
-        <vespa.version>8.273.20</vespa.version>
+        <vespa.version>8.340.17</vespa.version>
         <connect.utils.version>0.7.177</connect.utils.version>
         <junit.version>5.9.3</junit.version>
     </properties>
@@ -112,7 +112,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.4.1</version>
+                <version>3.5.3</version>
                 <configuration>
                     <createDependencyReducedPom>false</createDependencyReducedPom>
                 </configuration>
