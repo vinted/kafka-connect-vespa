@@ -197,6 +197,15 @@ How to handle records that Vespa rejects due to document malformation. Valid opt
 * Valid Values: Matches: `IGNORE`, `WARN`, `FAIL`
 * Importance: low
 
+`vespa.cloud.token`
+
+Vespa Cloud token when using token based authentication.
+
+* Type: string
+* Default: null
+* Valid Values: Matches: non-empty string
+* Importance: low
+
 #### Examples
 
 Connector configuration examples can be found in the [config](config) directory. But here are some quick ones to get

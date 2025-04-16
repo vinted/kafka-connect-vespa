@@ -16,6 +16,11 @@ import static org.apache.kafka.common.config.ConfigDef.Range.between;
 
 public class VespaSinkConfig extends AbstractConfig {
     // Connector group
+    public static final String VESPA_CLOUD_TOKEN_CONFIG = "vespa.cloud.token";
+    public static final String VESPA_CLOUD_TOKEN_DEFAULT = null;
+    public static final String VESPA_CLOUD_TOKEN_DOC = "The token to authenticate with Vespa Cloud instances";
+    public static final String VESPA_CLOUD_TOKEN_DISPLAY = "Vespa cloud token";
+
     public static final String ENDPOINT_CONFIG = "vespa.endpoint";
     private static final String ENDPOINT_DOC = "The comma-separated list of one or more Vespa URLs, such as "
             + "`https://node1:8080,http://node2:8080` or `https://node3:8080`. HTTPS is used for all connections "
@@ -151,6 +156,17 @@ public class VespaSinkConfig extends AbstractConfig {
                         ++order,
                         ConfigDef.Width.LONG,
                         ENDPOINT_DISPLAY)
+                .define(
+                        VESPA_CLOUD_TOKEN_CONFIG,
+                        ConfigDef.Type.STRING,
+                        VESPA_CLOUD_TOKEN_DEFAULT,
+                        ConfigDef.NonEmptyStringWithoutControlChars.nonEmptyStringWithoutControlChars(),
+                        ConfigDef.Importance.LOW,
+                        VESPA_CLOUD_TOKEN_DOC,
+                        CONNECTOR_GROUP,
+                        ++order,
+                        ConfigDef.Width.LONG,
+                        VESPA_CLOUD_TOKEN_DISPLAY)
                 .define(
                         CONNECTIONS_PER_ENDPOINT_CONFIG,
                         ConfigDef.Type.INT,
@@ -341,6 +357,7 @@ public class VespaSinkConfig extends AbstractConfig {
     public final boolean dropInvalidMessage;
     public final BehaviorOnMalformedDoc behaviorOnMalformedDoc;
     public final OperationalMode operationalMode;
+    public final String vespaCloudToken;
 
     public VespaSinkConfig(Map<String, ?> configProviderProps) {
         super(CONFIG, configProviderProps);
@@ -357,6 +374,7 @@ public class VespaSinkConfig extends AbstractConfig {
         this.route = getString(OPERATION_ROUTE_CONFIG);
         this.timeout = Duration.ofMillis(getInt(OPERATION_TIMEOUT_MS_CONFIG));
         this.tracelevel = getInt(OPERATION_TRACELEVEL_CONFIG);
+        this.vespaCloudToken = getString(VESPA_CLOUD_TOKEN_CONFIG);
         this.urls = getList(ENDPOINT_CONFIG)
                 .stream()
                 .map(s -> s.endsWith("/") ? s : s + "/")
