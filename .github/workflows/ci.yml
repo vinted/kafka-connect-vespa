@@ -11,7 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{steps.build.outputs.version}}
-
+    permissions:
+      checks: write
+      contents: read
     steps:
       - uses: actions/checkout@v3
 
