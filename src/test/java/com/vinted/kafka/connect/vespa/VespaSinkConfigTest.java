@@ -31,4 +31,19 @@ public class VespaSinkConfigTest {
         assertEquals(20, config.retryStrategyRetries);
         assertIterableEquals(Arrays.asList(FeedClient.OperationType.UPDATE, FeedClient.OperationType.REMOVE), config.retryStrategyOperationsTypes);
     }
+
+    @Test
+    void createsDefaultVespaCloudToken() {
+        VespaSinkConfig config = new VespaSinkConfig(params);
+
+        assertEquals(null, config.vespaCloudToken);
+    }
+
+    @Test
+    void overridesVespaCloudToken() {
+        params.put("vespa.cloud.token", "vespa_cloud_token_123");
+        VespaSinkConfig config = new VespaSinkConfig(params);
+
+        assertEquals("vespa_cloud_token_123", config.vespaCloudToken);
+    }
 }

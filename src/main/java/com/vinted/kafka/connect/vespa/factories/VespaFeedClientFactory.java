@@ -10,8 +10,7 @@ import java.time.Duration;
 
 public class VespaFeedClientFactory {
     public static FeedClient create(VespaSinkConfig config) {
-        return FeedClientBuilder
-                .create(ImmutableList.copyOf(config.urls))
+        FeedClientBuilder builder = FeedClientBuilder.create(ImmutableList.copyOf(config.urls))
                 .setConnectionsPerEndpoint(config.connectionsPerEndpoint)
                 .setMaxStreamPerConnection(config.maxStreamsPerConnection)
                 .setDryrun(config.dryrun)
@@ -27,7 +26,12 @@ public class VespaFeedClientFactory {
                     public int retries() {
                         return config.retryStrategyRetries;
                     }
-                })
-                .build();
+                });
+
+        if (config.vespaCloudToken != null) {
+            builder.addRequestHeader("Authorization", "Bearer " + config.vespaCloudToken);
+        }
+
+        return builder.build();
     }
 }
