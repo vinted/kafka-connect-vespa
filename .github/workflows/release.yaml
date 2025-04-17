@@ -41,7 +41,7 @@ jobs:
           tag: ${{ steps.build.outputs.version }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: vinted-kafka-connect-vespa-${{ steps.build.outputs.version }}
           path: |
