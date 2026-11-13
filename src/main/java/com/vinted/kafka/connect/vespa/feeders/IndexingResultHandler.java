@@ -65,18 +65,18 @@ public class IndexingResultHandler {
     // The errant record reporter throws "Tolerance exceeded" under errors.tolerance=none.
     private static Optional<Failure> unhandled(SinkRecord record, Throwable throwable) {
         Throwable cause = throwable instanceof CompletionException && throwable.getCause() != null ? throwable.getCause() : throwable;
-        log.error("Failed to handle the indexing result of {}.", Records.describe(record), cause);
+        log.error("Failed to handle the indexing result of {}.", RecordCoordinates.of(record), cause);
         return Optional.of(new Failure(Kind.FATAL, cause));
     }
 
     private static void logFailure(SinkRecord record, IndexingFailure failure, Throwable throwable) {
         if (failure == IndexingFailure.TRANSIENT) {
             // The task retries the batch and logs it once.
-            log.debug("Failed to index {}.", Records.describe(record), throwable);
+            log.debug("Failed to index {}.", RecordCoordinates.of(record), throwable);
             return;
         }
 
-        log.error("Failed to index {}.", Records.describe(record), throwable);
+        log.error("Failed to index {}.", RecordCoordinates.of(record), throwable);
     }
 
     private Optional<Failure> skipOrFail(SinkRecord record, Failure failure) {
@@ -99,13 +99,13 @@ public class IndexingResultHandler {
     }
 
     private static String ignoreMessage(SinkRecord record) {
-        return String.format("Failed to index %s. Ignoring and will not index it.", Records.describe(record));
+        return String.format("Failed to index %s. Ignoring and will not index it.", RecordCoordinates.of(record));
     }
 
     private static String failMessage(SinkRecord record) {
         return String.format(
                 "Failed to index %s. To ignore future document like this, change the configuration '%s' to '%s'.",
-                Records.describe(record),
+                RecordCoordinates.of(record),
                 VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG,
                 VespaSinkConfig.BehaviorOnMalformedDoc.IGNORE
         );

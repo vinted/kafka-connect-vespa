@@ -10,18 +10,24 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
-/** The kind of an indexing failure, recognised from vespa-feed-client 8.781.11 exceptions, which have no status code. */
+/**
+ * The kind of an indexing failure, recognised from vespa-feed-client 8.781.11 exceptions, which have no status code.
+ * The one place that reads the client's exception messages.
+ */
 public enum IndexingFailure {
     MALFORMED_DOCUMENT,
     TRANSIENT,
     FATAL;
 
-    private static final Pattern SERVER_ERROR = Pattern.compile("Status 5\\d\\d executing");
+    private static final Pattern STATUS = Pattern.compile("Status (\\d{3}) executing");
+    private static final int MAX_DESCRIPTION = 300;
 
     public static IndexingFailure of(Throwable failure) {
         if (failure instanceof CompletionException && failure.getCause() != null) {
@@ -52,7 +58,7 @@ public enum IndexingFailure {
             return false;
         }
 
-        Throwable rootCause = causes(failure).reduce((cause, next) -> next).orElse(failure);
+        Throwable rootCause = rootCause(failure);
 
         return description.contains("status 400")
                 || description.contains("string field value contains illegal code point")
@@ -76,7 +82,7 @@ public enum IndexingFailure {
         // The client's circuit breaker opened, or the server rejected the handshake without a status code.
         return message.contains("Operation aborted")
                 || message.contains("non-OK to handshake")
-                || SERVER_ERROR.matcher(message).find()
+                || status(failure).filter(status -> status >= 500).isPresent()
                 || causes(failure.getCause()).anyMatch(IndexingFailure::isNetworkFailure);
     }
 
@@ -87,6 +93,40 @@ public enum IndexingFailure {
                 || cause instanceof IllegalStateException && "session closed".equals(cause.getMessage())
                 // ai.vespa.feed.client.impl.RetryableException is package-private.
                 || "RetryableException".equals(cause.getClass().getSimpleName());
+    }
+
+    /** The HTTP status the client wrote into the message of the failure or one of its causes. */
+    static Optional<Integer> status(Throwable failure) {
+        return causes(failure)
+                .map(cause -> STATUS.matcher(String.valueOf(cause.getMessage())))
+                .filter(Matcher::find)
+                .map(status -> Integer.parseInt(status.group(1)))
+                .findFirst();
+    }
+
+    /**
+     * The type and message of the failure's root cause, without the document id the client prefixes it with and
+     * truncated, to tell failures apart in logs and exception messages.
+     */
+    static String describe(Throwable failure) {
+        Throwable rootCause = rootCause(failure);
+        String message = messageWithoutDocumentId(rootCause);
+        String description = rootCause.getClass().getSimpleName() + (message == null ? "" : ": " + message);
+        return description.length() <= MAX_DESCRIPTION ? description : description.substring(0, MAX_DESCRIPTION) + "...";
+    }
+
+    static Throwable rootCause(Throwable failure) {
+        return causes(failure).reduce((cause, next) -> next).orElse(failure);
+    }
+
+    private static String messageWithoutDocumentId(Throwable failure) {
+        String message = failure.getMessage();
+        if (message == null || !(failure instanceof FeedException)) {
+            return message;
+        }
+
+        String prefix = ((FeedException) failure).documentId().map(id -> "(" + id + ") ").orElse("");
+        return message.startsWith(prefix) ? message.substring(prefix.length()) : message;
     }
 
     private static Stream<Throwable> causes(Throwable failure) {

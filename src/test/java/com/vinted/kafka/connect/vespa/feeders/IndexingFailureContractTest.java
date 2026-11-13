@@ -18,12 +18,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.net.ServerSocket;
 import java.net.URI;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Stream;
@@ -80,6 +82,21 @@ class IndexingFailureContractTest {
                 Arguments.of(502, HTML, BAD_GATEWAY_PAGE),
                 Arguments.of(503, "text/plain", "no healthy upstream"),
                 Arguments.of(503, null, ""));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {400, 401, 403, 404, 500, 503})
+    void readsTheStatusOfVespaErrorsAndDescribesThemWithoutTheDocumentId(int status) throws Exception {
+        server = MockVespaServer.http(afterHandshake(respond(status, JSON, vespaError("Failed"))));
+        params.put(VespaSinkConfig.ENDPOINT_CONFIG, server.url());
+
+        try (FeedClient client = config().feedClient()) {
+            Throwable failure = failure(put(client, ID));
+
+            assertEquals(Optional.of(status), IndexingFailure.status(failure));
+            assertEquals("FeedException: Status " + status + " executing 'POST /document/v1/ns/dt/docid/1': Failed",
+                    IndexingFailure.describe(failure));
+        }
     }
 
     @ParameterizedTest(name = "{0} {1} -> {3}")

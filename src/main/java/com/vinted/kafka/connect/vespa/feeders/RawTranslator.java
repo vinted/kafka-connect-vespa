@@ -19,7 +19,7 @@ final class RawTranslator implements RecordTranslator<DocumentJson> {
     @Override
     public Optional<DocumentJson> translate(SinkRecord record) {
         if (record.value() == null) {
-            log.debug("Skipping tombstone {}.", Records.describe(record));
+            log.debug("Skipping tombstone {}.", RecordCoordinates.of(record));
             return Optional.empty();
         }
 

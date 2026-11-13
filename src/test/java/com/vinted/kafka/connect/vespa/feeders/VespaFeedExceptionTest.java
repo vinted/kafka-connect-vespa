@@ -75,14 +75,6 @@ class VespaFeedExceptionTest {
         assertTrue(exception.isTransient());
     }
 
-    @Test
-    void truncatesLongMessages() {
-        VespaFeedException exception = new VespaFeedException(Kind.FATAL, new FeedException("x".repeat(1000)));
-
-        assertTrue(exception.getMessage().length() < 400, exception.getMessage());
-        assertTrue(exception.getMessage().endsWith("..."), exception.getMessage());
-    }
-
     private static Failure transientFailure(Throwable cause) {
         return new Failure(Kind.TRANSIENT, cause);
     }

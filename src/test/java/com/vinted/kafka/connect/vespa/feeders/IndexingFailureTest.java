@@ -6,6 +6,7 @@ import ai.vespa.feed.client.OperationParseException;
 import ai.vespa.feed.client.ResultException;
 import ai.vespa.feed.client.ResultParseException;
 import com.fasterxml.jackson.core.JsonParseException;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -14,6 +15,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.UnknownHostException;
 import java.nio.file.NoSuchFileException;
+import java.util.Optional;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
@@ -22,6 +24,7 @@ import static com.vinted.kafka.connect.vespa.feeders.IndexingFailure.FATAL;
 import static com.vinted.kafka.connect.vespa.feeders.IndexingFailure.MALFORMED_DOCUMENT;
 import static com.vinted.kafka.connect.vespa.feeders.IndexingFailure.TRANSIENT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class IndexingFailureTest {
     private static final DocumentId ID = DocumentId.of("id:ns:dt::1");
@@ -69,6 +72,28 @@ class IndexingFailureTest {
     @MethodSource("failures")
     void classifiesFailures(String name, Throwable failure, IndexingFailure expected) {
         assertEquals(expected, IndexingFailure.of(failure));
+    }
+
+    @Test
+    void readsTheStatusFromTheFailureOrItsCauses() {
+        assertEquals(Optional.of(400), IndexingFailure.status(new CompletionException(BAD_REQUEST)));
+        assertEquals(Optional.empty(), IndexingFailure.status(new FeedException(ID, new IOException("reset"))));
+    }
+
+    @Test
+    void describesTheRootCauseWithoutTheDocumentId() {
+        assertEquals("FeedException: Status 400 executing 'POST /document/v1/ns/dt/docid/1': bad request",
+                IndexingFailure.describe(new CompletionException(BAD_REQUEST)));
+        assertEquals("ConnectException: Connection refused",
+                IndexingFailure.describe(new FeedException(ID, new java.net.ConnectException("Connection refused"))));
+    }
+
+    @Test
+    void truncatesLongDescriptions() {
+        String description = IndexingFailure.describe(new FeedException("x".repeat(1000)));
+
+        assertTrue(description.length() < 400, description);
+        assertTrue(description.endsWith("..."), description);
     }
 
     private static NullPointerException nullPointerAt(String className, String methodName) {
