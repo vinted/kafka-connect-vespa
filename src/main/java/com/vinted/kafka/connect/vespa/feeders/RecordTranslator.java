@@ -17,7 +17,7 @@ interface RecordTranslator<T extends VespaOperation> {
             case UPSERT:
                 return new UpsertTranslator(config);
             case RAW:
-                return new RawTranslator(config);
+                return new RawTranslator();
             default:
                 throw new ConnectException(String.format("Unknown operational mode: %s", config.operationalMode));
         }
