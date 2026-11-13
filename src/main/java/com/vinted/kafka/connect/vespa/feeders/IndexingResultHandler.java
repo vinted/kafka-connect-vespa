@@ -82,7 +82,7 @@ public class IndexingResultHandler {
             return;
         }
 
-        log.error(errorMessage(record), throwable);
+        log.error("Failed to index {}.", Records.describe(record), throwable);
     }
 
     private void skipOrFail(SinkRecord record, Throwable cause, Result skipped, CompletableFuture<Result> promise) {
@@ -101,7 +101,7 @@ public class IndexingResultHandler {
                 break;
             case FAIL:
             default:
-                log.error(errorMessage(record), cause);
+                log.error(failMessage(record), cause);
                 promise.completeExceptionally(cause);
         }
     }
@@ -110,7 +110,7 @@ public class IndexingResultHandler {
         return String.format("Failed to index %s. Ignoring and will not index it.", Records.describe(record));
     }
 
-    private static String errorMessage(SinkRecord record) {
+    private static String failMessage(SinkRecord record) {
         return String.format(
                 "Failed to index %s. To ignore future document like this, change the configuration '%s' to '%s'.",
                 Records.describe(record),
