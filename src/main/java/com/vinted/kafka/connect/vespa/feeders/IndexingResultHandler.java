@@ -48,7 +48,12 @@ public class IndexingResultHandler {
                     if (isMalformed(throwable)) {
                         skipOrFail(record, throwable, ignoredResult(), promise);
                     } else {
-                        log.error(errorMessage(record), throwable);
+                        if (TransientFailures.isTransient(throwable)) {
+                            // The task retries the batch and logs it once.
+                            log.debug("Failed to index {}.", Records.describe(record), throwable);
+                        } else {
+                            log.error(errorMessage(record), throwable);
+                        }
                         promise.completeExceptionally(asFeedException(throwable));
                     }
                 } else if (result.type() == Result.Type.success) {

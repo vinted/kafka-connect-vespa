@@ -17,6 +17,9 @@ public class MockVespaFeedClient implements FeedClient {
     public final Map<DocumentId, OperationParameters> parameters = new LinkedHashMap<>();
     public Result.Type resultType = Result.Type.success;
     public Throwable failure;
+    public final Map<DocumentId, Throwable> failures = new HashMap<>();
+    public CircuitBreaker.State circuitBreakerState = CircuitBreaker.State.CLOSED;
+    public boolean closed;
 
     @Override
     public CompletableFuture<Result> put(DocumentId documentId, String documentJson, OperationParameters params) {
@@ -53,11 +56,12 @@ public class MockVespaFeedClient implements FeedClient {
 
     @Override
     public CircuitBreaker.State circuitBreakerState() {
-        return null;
+        return circuitBreakerState;
     }
 
     @Override
     public void close(boolean graceful) {
+        closed = true;
     }
 
     public void assertDocumentIds(Collection<DocumentId> keys, String... expectedUserSpecificIds) {
@@ -101,6 +105,10 @@ public class MockVespaFeedClient implements FeedClient {
     }
 
     private CompletableFuture<Result> createSuccessResult(DocumentId documentId) {
+        if (failures.containsKey(documentId)) {
+            return CompletableFuture.failedFuture(failures.get(documentId));
+        }
+
         if (failure != null) {
             return CompletableFuture.failedFuture(failure);
         }
