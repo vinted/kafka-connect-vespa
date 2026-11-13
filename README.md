@@ -30,7 +30,8 @@ the namespace and the document type, but they can be overriden using the `vespa.
 configuration properties. If you need something more complex, consider using single message transforms to change the
 topic name.
 
-Within a batch, only the last record for each document is sent to Vespa. `vespa.operation.condition` applies to puts and
+Only a null value removes a document; an empty or blank value is an invalid message, handled according to
+`vespa.drop.invalid.message`. Within a batch, only the last record for each document is sent to Vespa. `vespa.operation.condition` applies to puts and
 removes, and `vespa.operation.create.if.non.existent` only to puts.
 
 #### RAW

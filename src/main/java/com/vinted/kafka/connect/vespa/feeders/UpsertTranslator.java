@@ -9,6 +9,7 @@ import com.vinted.kafka.connect.vespa.converters.ValueConverter;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentOperation;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.Put;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.Remove;
+import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.SinkRecord;
 
 import java.util.LinkedHashMap;
@@ -18,7 +19,7 @@ import java.util.Optional;
 
 /**
  * UPSERT: the record key is the document id, within the configured or topic namespace and document type. The value
- * is put as the document's fields; an empty value removes the document.
+ * is put as the document's fields; a tombstone removes the document, and an empty value is an invalid message.
  */
 final class UpsertTranslator implements RecordTranslator<DocumentOperation> {
     private final KeyConverter keyConverter = new KeyConverter();
@@ -41,8 +42,12 @@ final class UpsertTranslator implements RecordTranslator<DocumentOperation> {
         String value = valueConverter.convert(record);
         DocumentId documentId = DocumentId.of(orTopic(namespace, record), orTopic(documentType, record), key);
 
-        if (Strings.isNullOrEmpty(value)) {
+        if (value == null) {
             return Optional.of(new Remove(record, documentId, removeParameters));
+        }
+
+        if (value.isBlank()) {
+            throw new DataException("Value is empty; only a null value removes the document.");
         }
 
         return Optional.of(new Put(record, documentId, String.format("{\"fields\":%s}", value), putParameters));

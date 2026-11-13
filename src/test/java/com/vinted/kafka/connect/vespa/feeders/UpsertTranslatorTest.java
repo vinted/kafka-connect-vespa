@@ -10,11 +10,15 @@ import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -90,6 +94,18 @@ class UpsertTranslatorTest {
     @Test
     void rejectsARecordWithoutKeyAsAnInvalidMessage() {
         assertThrows(DataException.class, () -> translator().translate(record(null, "{}")));
+    }
+
+    @ParameterizedTest
+    @MethodSource("emptyValues")
+    void rejectsAnEmptyValueAsAnInvalidMessageRatherThanRemoving(Object value) {
+        SinkRecord record = new SinkRecord("topic", 0, Schema.STRING_SCHEMA, "key", null, value, offset++);
+
+        assertThrows(DataException.class, () -> translator().translate(record));
+    }
+
+    static Stream<Object> emptyValues() {
+        return Stream.of("", new byte[0], " \n\t ", " ".getBytes(StandardCharsets.UTF_8));
     }
 
     @Test
