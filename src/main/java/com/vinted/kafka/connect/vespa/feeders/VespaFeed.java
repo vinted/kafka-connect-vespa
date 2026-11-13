@@ -1,10 +1,10 @@
 package com.vinted.kafka.connect.vespa.feeders;
 
 import ai.vespa.feed.client.FeedClient;
-import ai.vespa.feed.client.FeedException;
-import ai.vespa.feed.client.MultiFeedException;
-import ai.vespa.feed.client.Result;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
+import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Failure;
+import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Kind;
+import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
@@ -45,8 +45,9 @@ public class VespaFeed implements Closeable {
         try {
             feed.session();
         } catch (RuntimeException e) {
-            if (IndexingFailure.of(e) != IndexingFailure.TRANSIENT) {
-                throw new VespaFeedException(e);
+            IndexingFailure failure = IndexingFailure.of(e);
+            if (failure != IndexingFailure.TRANSIENT) {
+                throw new VespaFeedException(Kind.of(failure), e);
             }
             log.warn("Could not connect to Vespa, will retry when feeding records.", e);
         }
@@ -54,15 +55,15 @@ public class VespaFeed implements Closeable {
         return feed;
     }
 
-    /** @throws VespaFeedException caused by a {@link MultiFeedException}, a {@code DataException} or a client build failure */
     public void feed(Collection<SinkRecord> records) {
-        try {
-            FeedSession session = session();
-            await(translate(translator, records).stream()
-                    .map(operation -> indexingResultHandler.handle(operation.record, operation.submit(session)))
-                    .collect(Collectors.toList()));
-        } catch (RuntimeException e) {
-            throw new VespaFeedException(e);
+        List<? extends VespaOperation> operations = translate(records);
+        List<Failure> failures = submit(operations).stream()
+                .map(CompletableFuture::join)
+                .flatMap(Optional::stream)
+                .collect(Collectors.toList());
+
+        if (!failures.isEmpty()) {
+            throw new VespaFeedException(failures);
         }
     }
 
@@ -76,6 +77,17 @@ public class VespaFeed implements Closeable {
             session.close();
         } finally {
             session = null;
+        }
+    }
+
+    private List<CompletableFuture<Optional<Failure>>> submit(List<? extends VespaOperation> operations) {
+        try {
+            FeedSession session = session();
+            return operations.stream()
+                    .map(operation -> indexingResultHandler.handle(operation.record, operation.submit(session)))
+                    .collect(Collectors.toList());
+        } catch (RuntimeException e) {
+            throw new VespaFeedException(Kind.of(IndexingFailure.of(e)), e);
         }
     }
 
@@ -94,7 +106,14 @@ public class VespaFeed implements Closeable {
         return session;
     }
 
-    /** @throws org.apache.kafka.connect.errors.DataException when a record is an invalid message that is not dropped */
+    private List<? extends VespaOperation> translate(Collection<SinkRecord> records) {
+        try {
+            return translate(translator, records);
+        } catch (DataException e) {
+            throw new VespaFeedException(Kind.INVALID_MESSAGE, e);
+        }
+    }
+
     private <T extends VespaOperation> List<T> translate(RecordTranslator<T> translator, Collection<SinkRecord> records) {
         List<T> operations = records.stream()
                 .flatMap(record -> invalidMessageHandler.convert(record, translator::translate)
@@ -111,25 +130,5 @@ public class VespaFeed implements Closeable {
         } catch (Exception e) {
             log.warn("Error closing the Vespa feed client.", e);
         }
-    }
-
-    private static void await(List<CompletableFuture<Result>> operations) {
-        List<FeedException> failures = operations.stream()
-                .map(VespaFeed::failure)
-                .flatMap(Optional::stream)
-                .collect(Collectors.toList());
-
-        if (!failures.isEmpty()) {
-            throw new MultiFeedException(failures);
-        }
-    }
-
-    private static Optional<FeedException> failure(CompletableFuture<Result> operation) {
-        Throwable failure = operation.handle((result, throwable) -> throwable).join();
-        return Optional.ofNullable(failure).map(VespaFeed::asFeedException);
-    }
-
-    private static FeedException asFeedException(Throwable throwable) {
-        return throwable instanceof FeedException ? (FeedException) throwable : new FeedException(throwable);
     }
 }

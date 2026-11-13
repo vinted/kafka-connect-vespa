@@ -2,7 +2,6 @@ package com.vinted.kafka.connect.vespa;
 
 import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.FeedException;
-import ai.vespa.feed.client.MultiFeedException;
 import ai.vespa.feed.client.OperationParameters;
 import ai.vespa.feed.client.Result;
 import com.google.common.base.Strings;
@@ -143,8 +142,8 @@ public class VespaUpsertSinkTaskTest {
 
         ConnectException thrown = assertThrows(ConnectException.class,
                 () -> task.put(List.of(record("set1", "{\"field\":\"value1\"}"))));
-        MultiFeedException cause = assertInstanceOf(MultiFeedException.class, thrown.getCause());
-        assertEquals(1, cause.feedExceptions().size());
+        assertInstanceOf(FeedException.class, thrown.getCause());
+        assertTrue(thrown.getMessage().startsWith("rejected result in 1 operation"), thrown.getMessage());
     }
 
     @Test

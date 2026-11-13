@@ -1,9 +1,10 @@
 package com.vinted.kafka.connect.vespa.feeders;
 
-import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.FeedException;
 import ai.vespa.feed.client.Result;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
+import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Failure;
+import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Kind;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
@@ -11,6 +12,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 /**
  * Decides what an indexing result means for its record. Malformed documents and rejected results
@@ -32,48 +34,39 @@ public class IndexingResultHandler {
     }
 
     /**
-     * Returns a future that completes with the record's result once {@code future} completes and the record has
-     * been reported where needed. It completes normally when the record succeeded or is skipped, and
-     * exceptionally when the record must fail the batch.
+     * Returns a future that completes once {@code future} completes and the record has been reported where needed,
+     * with why the record fails its batch, or empty when it succeeded or is skipped. It never completes exceptionally.
      */
-    public CompletableFuture<Result> handle(SinkRecord record, CompletableFuture<Result> future) {
-        CompletableFuture<Result> promise = new CompletableFuture<>();
-
-        future.whenComplete((result, throwable) -> {
-            try {
-                complete(record, result, throwable, promise);
-            } catch (Throwable t) {
-                // whenComplete swallows anything thrown here, which would leave the promise, and the feed awaiting it,
-                // waiting forever. The errant record reporter throws "Tolerance exceeded" under errors.tolerance=none.
-                FeedException failure = new IndexingResultHandlingException(record, t);
-                logFailure(record, IndexingFailure.FATAL, failure);
-                promise.completeExceptionally(failure);
-            }
-        });
-
-        return promise;
+    CompletableFuture<Optional<Failure>> handle(SinkRecord record, CompletableFuture<Result> future) {
+        return future
+                .handle((result, throwable) -> outcome(record, result, throwable))
+                .exceptionally(throwable -> unhandled(record, throwable));
     }
 
-    private void complete(SinkRecord record, Result result, Throwable throwable, CompletableFuture<Result> promise) {
+    private Optional<Failure> outcome(SinkRecord record, Result result, Throwable throwable) {
         if (result != null && result.type() == Result.Type.success) {
-            promise.complete(result);
-            return;
+            return Optional.empty();
         }
 
         if (result != null) {
             // Vespa rejected the operation, i.e. its test-and-set condition was not met.
-            skipOrFail(record, new FeedException(result.documentId(), result.toString()), result, promise);
-            return;
+            return skipOrFail(record, new Failure(Kind.REJECTED_RESULT, new FeedException(result.documentId(), result.toString())));
         }
 
         IndexingFailure failure = IndexingFailure.of(throwable);
         if (failure == IndexingFailure.MALFORMED_DOCUMENT) {
-            skipOrFail(record, throwable, ignoredResult(), promise);
-            return;
+            return skipOrFail(record, new Failure(Kind.MALFORMED_DOCUMENT, throwable));
         }
 
         logFailure(record, failure, throwable);
-        promise.completeExceptionally(throwable);
+        return Optional.of(new Failure(Kind.of(failure), throwable));
+    }
+
+    // The errant record reporter throws "Tolerance exceeded" under errors.tolerance=none.
+    private static Optional<Failure> unhandled(SinkRecord record, Throwable throwable) {
+        Throwable cause = throwable instanceof CompletionException && throwable.getCause() != null ? throwable.getCause() : throwable;
+        log.error("Failed to handle the indexing result of {}.", Records.describe(record), cause);
+        return Optional.of(new Failure(Kind.FATAL, cause));
     }
 
     private static void logFailure(SinkRecord record, IndexingFailure failure, Throwable throwable) {
@@ -86,24 +79,22 @@ public class IndexingResultHandler {
         log.error("Failed to index {}.", Records.describe(record), throwable);
     }
 
-    private void skipOrFail(SinkRecord record, Throwable cause, Result skipped, CompletableFuture<Result> promise) {
+    private Optional<Failure> skipOrFail(SinkRecord record, Failure failure) {
         if (reporter != null) {
-            reporter.report(record, cause);
+            reporter.report(record, failure.cause);
         }
 
         switch (behaviorOnMalformedDoc) {
             case IGNORE:
-                log.info(ignoreMessage(record), cause);
-                promise.complete(skipped);
-                break;
+                log.info(ignoreMessage(record), failure.cause);
+                return Optional.empty();
             case WARN:
-                log.warn(ignoreMessage(record), cause);
-                promise.complete(skipped);
-                break;
+                log.warn(ignoreMessage(record), failure.cause);
+                return Optional.empty();
             case FAIL:
             default:
-                log.error(failMessage(record), cause);
-                promise.completeExceptionally(cause);
+                log.error(failMessage(record), failure.cause);
+                return Optional.of(failure);
         }
     }
 
@@ -118,29 +109,5 @@ public class IndexingResultHandler {
                 VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG,
                 VespaSinkConfig.BehaviorOnMalformedDoc.IGNORE
         );
-    }
-
-    private static Result ignoredResult() {
-        return new Result() {
-            @Override
-            public Type type() {
-                return Type.success;
-            }
-
-            @Override
-            public DocumentId documentId() {
-                return null;
-            }
-
-            @Override
-            public Optional<String> resultMessage() {
-                return Optional.empty();
-            }
-
-            @Override
-            public Optional<String> traceMessage() {
-                return Optional.empty();
-            }
-        };
     }
 }

@@ -1,6 +1,5 @@
 package com.vinted.kafka.connect.vespa;
 
-import com.vinted.kafka.connect.vespa.feeders.IndexingFailure;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 
@@ -62,8 +61,8 @@ final class RetryBudget {
     }
 
     /** Spends one retry when the batch failed only transiently and the budget lasts; otherwise resets the budget. */
-    Decision failed(IndexingFailure failure) {
-        if (failure != IndexingFailure.TRANSIENT) {
+    Decision failed(boolean isTransient) {
+        if (!isTransient) {
             return giveUp(Outcome.NOT_TRANSIENT);
         }
 

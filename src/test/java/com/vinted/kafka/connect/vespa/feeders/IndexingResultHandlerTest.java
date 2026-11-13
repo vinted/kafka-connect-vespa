@@ -7,6 +7,8 @@ import ai.vespa.feed.client.Result;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.vinted.kafka.connect.vespa.CapturedLogs;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
+import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Failure;
+import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Kind;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
@@ -20,7 +22,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
 
@@ -30,7 +31,6 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -44,18 +44,18 @@ class IndexingResultHandlerTest {
 
     static Stream<Arguments> failuresThatAreNotMalformed() {
         return Stream.of(
-                Arguments.of("transient failure", new FeedException(ID, new TimeoutException("operation timed out"))),
-                Arguments.of("fatal failure", new FeedException(new IllegalArgumentException("Document ID must be on the form 'id:...'")))
+                Arguments.of("transient failure", new FeedException(ID, new TimeoutException("operation timed out")), Kind.TRANSIENT),
+                Arguments.of("fatal failure", new FeedException(new IllegalArgumentException("Document ID must be on the form 'id:...'")), Kind.FATAL)
         );
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("failuresThatAreNotMalformed")
-    void failsFailuresThatAreNotMalformedWithoutReportingThem(String name, Throwable failure) {
-        CompletableFuture<Result> promise = handle("IGNORE", CompletableFuture.failedFuture(failure));
+    void failsFailuresThatAreNotMalformedWithoutReportingThem(String name, Throwable failure, Kind kind) {
+        Failure failed = failure(handle("IGNORE", CompletableFuture.failedFuture(failure)));
 
-        CompletionException thrown = assertThrows(CompletionException.class, promise::join);
-        assertSame(failure, thrown.getCause());
+        assertEquals(kind, failed.kind);
+        assertSame(failure, failed.cause);
         verify(reporter, never()).report(any(), any());
     }
 
@@ -90,9 +90,7 @@ class IndexingResultHandlerTest {
     void skipsMalformedDocumentsUnderIgnore() {
         Throwable failure = new FeedException(ID, "Status 400 executing 'POST /document/v1/': bad request");
 
-        CompletableFuture<Result> promise = handle("IGNORE", CompletableFuture.failedFuture(failure));
-
-        assertEquals(Result.Type.success, promise.join().type());
+        assertEquals(Optional.empty(), handle("IGNORE", CompletableFuture.failedFuture(failure)).join());
         verify(reporter).report(record, failure);
     }
 
@@ -100,9 +98,7 @@ class IndexingResultHandlerTest {
     void skipsMalformedDocumentsUnderWarn() {
         Throwable failure = new FeedException(ID, "Status 400 executing 'POST /document/v1/': bad request");
 
-        CompletableFuture<Result> promise = handle("WARN", CompletableFuture.failedFuture(failure));
-
-        assertEquals(Result.Type.success, promise.join().type());
+        assertEquals(Optional.empty(), handle("WARN", CompletableFuture.failedFuture(failure)).join());
         verify(reporter).report(record, failure);
     }
 
@@ -110,37 +106,32 @@ class IndexingResultHandlerTest {
     void reportsAndFailsMalformedDocumentsUnderFail() {
         Throwable failure = new FeedException(ID, "Status 400 executing 'POST /document/v1/': bad request");
 
-        CompletableFuture<Result> promise = handle("FAIL", CompletableFuture.failedFuture(failure));
+        Failure failed = failure(handle("FAIL", CompletableFuture.failedFuture(failure)));
 
-        CompletionException thrown = assertThrows(CompletionException.class, promise::join);
-        assertSame(failure, thrown.getCause());
+        assertEquals(Kind.MALFORMED_DOCUMENT, failed.kind);
+        assertSame(failure, failed.cause);
         verify(reporter).report(record, failure);
     }
 
     @Test
     void reportsAndSkipsRejectedResultsUnderIgnore() {
-        Result rejected = result(Result.Type.conditionNotMet);
-
-        CompletableFuture<Result> promise = handle("IGNORE", CompletableFuture.completedFuture(rejected));
-
-        assertSame(rejected, promise.join());
+        assertEquals(Optional.empty(), handle("IGNORE", CompletableFuture.completedFuture(result(Result.Type.conditionNotMet))).join());
         verify(reporter).report(any(), any());
     }
 
     @Test
     void reportsAndFailsRejectedResultsUnderFail() {
-        CompletableFuture<Result> promise = handle("FAIL", CompletableFuture.completedFuture(result(Result.Type.conditionNotMet)));
+        Failure failed = failure(handle("FAIL", CompletableFuture.completedFuture(result(Result.Type.conditionNotMet))));
 
-        assertThrows(CompletionException.class, promise::join);
+        assertEquals(Kind.REJECTED_RESULT, failed.kind);
         verify(reporter).report(any(), any());
     }
 
     @Test
     void failsRejectedResultsWithAFeedExceptionForTheirDocument() {
-        CompletableFuture<Result> promise = handle("FAIL", CompletableFuture.completedFuture(result(Result.Type.conditionNotMet)));
+        Failure failed = failure(handle("FAIL", CompletableFuture.completedFuture(result(Result.Type.conditionNotMet))));
 
-        CompletionException thrown = assertThrows(CompletionException.class, promise::join);
-        FeedException cause = assertInstanceOf(FeedException.class, thrown.getCause());
+        FeedException cause = assertInstanceOf(FeedException.class, failed.cause);
         assertEquals(Optional.of(ID), cause.documentId());
     }
 
@@ -150,12 +141,12 @@ class IndexingResultHandlerTest {
         ConnectException toleranceExceeded = toleranceExceeded(failure);
         when(reporter.report(any(), any())).thenThrow(toleranceExceeded);
 
-        CompletableFuture<Result> promise = handle("IGNORE", CompletableFuture.failedFuture(failure));
+        CompletableFuture<Optional<Failure>> outcome = handle("IGNORE", CompletableFuture.failedFuture(failure));
 
-        assertTrue(promise.isDone(), "promise must complete when the reporter throws");
-        CompletionException thrown = assertThrows(CompletionException.class, promise::join);
-        FeedException cause = assertInstanceOf(FeedException.class, thrown.getCause());
-        assertSame(toleranceExceeded, cause.getCause());
+        assertTrue(outcome.isDone(), "outcome must complete when the reporter throws");
+        Failure failed = failure(outcome);
+        assertEquals(Kind.FATAL, failed.kind);
+        assertSame(toleranceExceeded, failed.cause);
     }
 
     @Test
@@ -163,10 +154,7 @@ class IndexingResultHandlerTest {
         Throwable unparseable = new OperationParseException("Failed to parse document JSON", new JsonParseException(null, "Unexpected character"));
         when(reporter.report(any(), any())).thenThrow(toleranceExceeded(unparseable));
 
-        CompletableFuture<Result> promise = handle("IGNORE", CompletableFuture.failedFuture(unparseable));
-
-        CompletionException thrown = assertThrows(CompletionException.class, promise::join);
-        assertEquals(IndexingFailure.FATAL, IndexingFailure.of(thrown.getCause()));
+        assertEquals(Kind.FATAL, failure(handle("IGNORE", CompletableFuture.failedFuture(unparseable))).kind);
     }
 
     @Test
@@ -185,16 +173,16 @@ class IndexingResultHandlerTest {
     }
 
     @Test
-    void passesSuccessfulResultsThrough() {
-        Result success = result(Result.Type.success);
-
-        CompletableFuture<Result> promise = handle("FAIL", CompletableFuture.completedFuture(success));
-
-        assertSame(success, promise.join());
+    void hasNoFailureForSuccessfulResults() {
+        assertEquals(Optional.empty(), handle("FAIL", CompletableFuture.completedFuture(result(Result.Type.success))).join());
         verify(reporter, never()).report(any(), any());
     }
 
-    private CompletableFuture<Result> handle(String behaviorOnMalformedDocs, CompletableFuture<Result> future) {
+    private static Failure failure(CompletableFuture<Optional<Failure>> outcome) {
+        return outcome.join().orElseThrow();
+    }
+
+    private CompletableFuture<Optional<Failure>> handle(String behaviorOnMalformedDocs, CompletableFuture<Result> future) {
         VespaSinkConfig config = new VespaSinkConfig(
                 Map.of(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, behaviorOnMalformedDocs));
         return new IndexingResultHandler(config, reporter).handle(record, future);
