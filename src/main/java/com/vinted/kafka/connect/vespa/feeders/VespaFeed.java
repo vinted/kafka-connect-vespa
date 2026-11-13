@@ -19,8 +19,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static ai.vespa.feed.client.FeedClient.CircuitBreaker.State.OPEN;
-
 /** Feeds batches of records to Vespa, rebuilding the feed client when it was never built or its breaker opened. */
 public class VespaFeed implements Closeable {
     private static final Logger log = LoggerFactory.getLogger(VespaFeed.class);
@@ -30,8 +28,7 @@ public class VespaFeed implements Closeable {
     private final InvalidMessageHandler invalidMessageHandler;
     private final IndexingResultHandler indexingResultHandler;
     private final Function<VespaSinkConfig, FeedClient> clients;
-    private FeedClient client;
-    private VespaFeeder<?> feeder;
+    private FeedSession session;
 
     private VespaFeed(VespaSinkConfig config, ErrantRecordReporter reporter, Function<VespaSinkConfig, FeedClient> clients) {
         this.config = config;
@@ -46,7 +43,7 @@ public class VespaFeed implements Closeable {
         VespaFeed feed = new VespaFeed(config, reporter, clients);
 
         try {
-            feed.feeder();
+            feed.session();
         } catch (RuntimeException e) {
             if (IndexingFailure.of(e) != IndexingFailure.TRANSIENT) {
                 throw new VespaFeedException(e);
@@ -60,7 +57,10 @@ public class VespaFeed implements Closeable {
     /** @throws VespaFeedException caused by a {@link MultiFeedException}, a {@code DataException} or a client build failure */
     public void feed(Collection<SinkRecord> records) {
         try {
-            await(feeder().feed(records));
+            FeedSession session = session();
+            await(translate(translator, records).stream()
+                    .map(operation -> indexingResultHandler.handle(operation.record, operation.submit(session)))
+                    .collect(Collectors.toList()));
         } catch (RuntimeException e) {
             throw new VespaFeedException(e);
         }
@@ -68,39 +68,48 @@ public class VespaFeed implements Closeable {
 
     @Override
     public void close() throws IOException {
-        if (feeder == null) {
+        if (session == null) {
             return;
         }
 
         try {
-            feeder.close();
+            session.close();
         } finally {
-            feeder = null;
-            client = null;
+            session = null;
         }
     }
 
-    private VespaFeeder<?> feeder() {
-        if (feeder != null && client.circuitBreakerState() != OPEN) {
-            return feeder;
+    private FeedSession session() {
+        if (session != null && !session.isBroken()) {
+            return session;
         }
 
-        if (feeder != null) {
+        if (session != null) {
             log.warn("Vespa feed client circuit breaker is open, recreating the feed client.");
-            closeQuietly(feeder);
-            feeder = null;
+            closeQuietly(session);
+            session = null;
         }
 
-        client = clients.apply(config);
-        feeder = new VespaFeeder<>(client, translator, invalidMessageHandler, indexingResultHandler);
-        return feeder;
+        session = new FeedSession(clients.apply(config), RecordTranslator.commonParameters(config));
+        return session;
     }
 
-    private static void closeQuietly(VespaFeeder<?> feeder) {
+    /** @throws org.apache.kafka.connect.errors.DataException when a record is an invalid message that is not dropped */
+    private <T extends VespaOperation> List<T> translate(RecordTranslator<T> translator, Collection<SinkRecord> records) {
+        List<T> operations = records.stream()
+                .flatMap(record -> invalidMessageHandler.convert(record, translator::translate)
+                        .flatMap(Function.identity())
+                        .stream())
+                .collect(Collectors.toList());
+
+        return translator.compact(operations);
+    }
+
+    private static void closeQuietly(FeedSession session) {
         try {
-            feeder.close();
+            session.close();
         } catch (Exception e) {
-            log.warn("Error closing the Vespa feeder.", e);
+            log.warn("Error closing the Vespa feed client.", e);
         }
     }
 

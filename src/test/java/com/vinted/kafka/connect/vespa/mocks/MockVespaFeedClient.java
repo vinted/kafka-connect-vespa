@@ -20,6 +20,7 @@ public class MockVespaFeedClient implements FeedClient {
     public final Map<DocumentId, Throwable> failures = new HashMap<>();
     public CircuitBreaker.State circuitBreakerState = CircuitBreaker.State.CLOSED;
     public boolean closed;
+    public int closes;
 
     @Override
     public CompletableFuture<Result> put(DocumentId documentId, String documentJson, OperationParameters params) {
@@ -62,6 +63,7 @@ public class MockVespaFeedClient implements FeedClient {
     @Override
     public void close(boolean graceful) {
         closed = true;
+        closes++;
     }
 
     public void assertDocumentIds(Collection<DocumentId> keys, String... expectedUserSpecificIds) {
