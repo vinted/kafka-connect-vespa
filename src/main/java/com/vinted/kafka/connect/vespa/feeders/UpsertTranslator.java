@@ -4,8 +4,6 @@ import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.OperationParameters;
 import com.google.common.base.Strings;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
-import com.vinted.kafka.connect.vespa.converters.KeyConverter;
-import com.vinted.kafka.connect.vespa.converters.ValueConverter;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentOperation;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.Put;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.Remove;
@@ -22,8 +20,6 @@ import java.util.Optional;
  * is put as the document's fields; a tombstone removes the document, and an empty value is an invalid message.
  */
 final class UpsertTranslator implements RecordTranslator<DocumentOperation> {
-    private final KeyConverter keyConverter = new KeyConverter();
-    private final ValueConverter valueConverter = new ValueConverter();
     private final String namespace;
     private final String documentType;
     private final OperationParameters putParameters;
@@ -38,8 +34,8 @@ final class UpsertTranslator implements RecordTranslator<DocumentOperation> {
 
     @Override
     public Optional<DocumentOperation> translate(SinkRecord record) {
-        String key = keyConverter.convert(record);
-        String value = valueConverter.convert(record);
+        String key = KeyConverter.convert(record);
+        String value = ValueConverter.convert(record);
         DocumentId documentId = DocumentId.of(orTopic(namespace, record), orTopic(documentType, record), key);
 
         if (value == null) {

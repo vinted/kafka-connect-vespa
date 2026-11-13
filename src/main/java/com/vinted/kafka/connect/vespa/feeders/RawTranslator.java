@@ -2,7 +2,6 @@ package com.vinted.kafka.connect.vespa.feeders;
 
 import ai.vespa.feed.client.OperationParameters;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
-import com.vinted.kafka.connect.vespa.converters.ValueConverter;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentJson;
 import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.SinkRecord;
@@ -19,7 +18,6 @@ import java.util.Optional;
 final class RawTranslator implements RecordTranslator<DocumentJson> {
     private static final Logger log = LoggerFactory.getLogger(RawTranslator.class);
 
-    private final ValueConverter valueConverter = new ValueConverter();
     private final OperationParameters parameters;
 
     RawTranslator(VespaSinkConfig config) {
@@ -33,7 +31,7 @@ final class RawTranslator implements RecordTranslator<DocumentJson> {
             return Optional.empty();
         }
 
-        String json = valueConverter.convert(record);
+        String json = ValueConverter.convert(record);
 
         if (json.isBlank()) {
             throw new DataException("Value is empty; it must be a Vespa document operation.");
