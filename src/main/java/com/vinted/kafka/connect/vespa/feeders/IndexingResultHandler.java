@@ -45,7 +45,9 @@ public class IndexingResultHandler {
             } catch (Throwable t) {
                 // whenComplete swallows anything thrown here, which would leave the promise, and the feed awaiting it,
                 // waiting forever. The errant record reporter throws "Tolerance exceeded" under errors.tolerance=none.
-                promise.completeExceptionally(new IndexingResultHandlingException(record, t));
+                FeedException failure = new IndexingResultHandlingException(record, t);
+                logFailure(record, IndexingFailure.FATAL, failure);
+                promise.completeExceptionally(failure);
             }
         });
 

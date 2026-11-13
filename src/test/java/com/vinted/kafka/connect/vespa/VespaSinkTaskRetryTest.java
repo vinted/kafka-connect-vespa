@@ -97,6 +97,24 @@ class VespaSinkTaskRetryTest {
     }
 
     @Test
+    void logsAFatalFailureOnceAndThatItFailsTheTask() {
+        client.answerAll(failure(UNAUTHORIZED));
+        SinkRecord unauthorized = record("unauthorized");
+        task.start(params);
+
+        try (CapturedLogs logs = CapturedLogs.capture()) {
+            assertNotRetriable(() -> task.put(List.of(unauthorized)));
+
+            List<String> errors = logs.errors();
+            List<String> withStackTraces = errors.stream().filter(error -> error.contains("\tat ")).collect(Collectors.toList());
+            assertEquals(1, withStackTraces.size(), String.join("\n", errors));
+            assertTrue(withStackTraces.get(0).contains("offset=" + unauthorized.kafkaOffset()), withStackTraces.get(0));
+            assertTrue(withStackTraces.get(0).contains("Status 401"), withStackTraces.get(0));
+            assertTrue(errors.stream().anyMatch(error -> error.contains(VespaSinkTask.class.getName())), String.join("\n", errors));
+        }
+    }
+
+    @Test
     void reportsASkippedMalformedDocumentOnceWhileItsBatchIsRedelivered() {
         params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
         SinkRecord malformed = record("malformed");
