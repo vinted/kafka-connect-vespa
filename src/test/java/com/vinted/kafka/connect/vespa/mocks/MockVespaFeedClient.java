@@ -16,6 +16,7 @@ public class MockVespaFeedClient implements FeedClient {
     final Map<DocumentId, String> removeOperations = new LinkedHashMap<>();
     public final Map<DocumentId, OperationParameters> parameters = new LinkedHashMap<>();
     public Result.Type resultType = Result.Type.success;
+    public Throwable failure;
 
     @Override
     public CompletableFuture<Result> put(DocumentId documentId, String documentJson, OperationParameters params) {
@@ -100,6 +101,10 @@ public class MockVespaFeedClient implements FeedClient {
     }
 
     private CompletableFuture<Result> createSuccessResult(DocumentId documentId) {
+        if (failure != null) {
+            return CompletableFuture.failedFuture(failure);
+        }
+
         Result.Type type = resultType;
         return CompletableFuture.completedFuture(new Result() {
             @Override

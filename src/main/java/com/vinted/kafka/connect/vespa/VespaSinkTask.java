@@ -9,6 +9,7 @@ import com.vinted.kafka.connect.vespa.feeders.VespaFeeder;
 import com.vinted.kafka.connect.vespa.feeders.VespaRawFeeder;
 import com.vinted.kafka.connect.vespa.feeders.VespaUpsertFeeder;
 import org.apache.kafka.connect.errors.ConnectException;
+import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTask;
 import org.slf4j.Logger;
@@ -25,7 +26,6 @@ public class VespaSinkTask extends SinkTask {
     private OperationParameters parameters;
     private FeedClient client;
     private VespaFeeder feeder;
-    private VespaReporter reporter;
 
     @Override
     public void start(Map<String, String> props) {
@@ -35,11 +35,16 @@ public class VespaSinkTask extends SinkTask {
     protected void start(Map<String, String> props, FeedClient client) {
         log.info("Starting Vespa Sink Task.");
 
+        ErrantRecordReporter reporter = null;
         try {
-            reporter = new VespaReporter(context.errantRecordReporter());
-        } catch (NullPointerException | NoSuchMethodError | NoClassDefFoundError e) {
-            log.warn("Could not get errant record reporter, will not report bad records.", e);
-            reporter = new VespaReporter(null);
+            // Null unless errors.deadletterqueue.topic.name or errors.log.enable is set.
+            reporter = context.errantRecordReporter();
+            if (reporter == null) {
+                log.info("Errant record reporter not configured.");
+            }
+        } catch (NoClassDefFoundError | NoSuchMethodError e) {
+            // Will occur in Connect runtimes earlier than 2.6
+            log.warn("Kafka versions prior to 2.6 do not support the errant record reporter.");
         }
 
         this.config = new VespaSinkConfig(props);
