@@ -2,9 +2,7 @@ package com.vinted.kafka.connect.vespa.feeders;
 
 import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.FeedException;
-import ai.vespa.feed.client.OperationParseException;
 import ai.vespa.feed.client.Result;
-import com.fasterxml.jackson.core.JsonParseException;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
@@ -13,12 +11,11 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Stream;
 
 /**
  * Decides what an indexing result means for its record. Malformed documents and rejected results
  * ({@code conditionNotMet}) are reported to the errant record reporter, then skipped or failed according to
- * {@code vespa.behavior.on.malformed.documents}. Any other failure is treated as transient and fails the record.
+ * {@code vespa.behavior.on.malformed.documents}. Any other failure fails the record.
  */
 public class IndexingResultHandler {
     private static final Logger log = LoggerFactory.getLogger(IndexingResultHandler.class);
@@ -68,18 +65,24 @@ public class IndexingResultHandler {
             return;
         }
 
-        if (isMalformed(throwable)) {
+        IndexingFailure failure = IndexingFailure.of(throwable);
+        if (failure == IndexingFailure.MALFORMED_DOCUMENT) {
             skipOrFail(record, throwable, ignoredResult(), promise);
             return;
         }
 
-        if (TransientFailures.isTransient(throwable)) {
+        logFailure(record, failure, throwable);
+        promise.completeExceptionally(asFeedException(throwable));
+    }
+
+    private static void logFailure(SinkRecord record, IndexingFailure failure, Throwable throwable) {
+        if (failure == IndexingFailure.TRANSIENT) {
             // The task retries the batch and logs it once.
             log.debug("Failed to index {}.", Records.describe(record), throwable);
-        } else {
-            log.error(errorMessage(record), throwable);
+            return;
         }
-        promise.completeExceptionally(asFeedException(throwable));
+
+        log.error(errorMessage(record), throwable);
     }
 
     private void skipOrFail(SinkRecord record, Throwable cause, Result skipped, CompletableFuture<Result> promise) {
@@ -121,26 +124,6 @@ public class IndexingResultHandler {
                 VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG,
                 VespaSinkConfig.BehaviorOnMalformedDoc.IGNORE
         );
-    }
-
-    /**
-     * The feed client exposes no typed status code, so HTTP 400 is recognised from the exception message. A
-     * {@code ResultParseException} is never malformed: the response could not be parsed, so its status is unknown.
-     */
-    private static boolean isMalformed(Throwable throwable) {
-        Throwable rootCause = Stream
-                .iterate(throwable, Throwable::getCause)
-                .filter(element -> element.getCause() == null)
-                .findFirst()
-                .orElse(throwable);
-
-        String throwableString = throwable.toString().toLowerCase();
-
-        return !(throwableString.contains("resultparseexception"))
-                && (throwableString.contains("status 400")
-                || throwableString.contains("string field value contains illegal code point")
-                || rootCause instanceof OperationParseException
-                || rootCause instanceof JsonParseException);
     }
 
     private static Result ignoredResult() {

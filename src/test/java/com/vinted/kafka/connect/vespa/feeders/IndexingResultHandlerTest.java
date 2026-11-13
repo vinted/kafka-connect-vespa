@@ -2,11 +2,7 @@ package com.vinted.kafka.connect.vespa.feeders;
 
 import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.FeedException;
-import ai.vespa.feed.client.OperationParseException;
 import ai.vespa.feed.client.Result;
-import ai.vespa.feed.client.ResultException;
-import ai.vespa.feed.client.ResultParseException;
-import com.fasterxml.jackson.core.JsonParseException;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -41,32 +37,31 @@ class IndexingResultHandlerTest {
     private final ErrantRecordReporter reporter = mock(ErrantRecordReporter.class);
     private final SinkRecord record = new SinkRecord("topic", 0, Schema.STRING_SCHEMA, "1", Schema.STRING_SCHEMA, "{}", 7);
 
-    static Stream<Arguments> failures() {
+    static Stream<Arguments> failuresThatAreNotMalformed() {
         return Stream.of(
-                Arguments.of("HTTP 400", new FeedException(ID, "Status 400 executing 'POST /document/v1/': bad request"), true),
-                Arguments.of("illegal code point", new FeedException(ID, "String field value contains illegal code point 0x1"), true),
-                Arguments.of("unparseable operation", new OperationParseException("No document id for document at offset 0"), true),
-                Arguments.of("JSON parse error in cause chain", new OperationParseException("Failed to parse document JSON", new JsonParseException(null, "Unexpected character")), true),
-                Arguments.of("unparseable result, even with status 400", new ResultParseException(ID, "Status 400: failed parsing response"), false),
-                Arguments.of("Vespa failure (502/504/507)", new ResultException(ID, "Status 507: insufficient storage", null), false),
-                Arguments.of("timeout", new FeedException(ID, new TimeoutException("operation timed out")), false),
-                Arguments.of("malformed document id in RAW mode", new FeedException(new IllegalArgumentException("Document ID must be on the form 'id:...'")), false)
+                Arguments.of("transient failure", new FeedException(ID, new TimeoutException("operation timed out"))),
+                Arguments.of("fatal failure", new FeedException(new IllegalArgumentException("Document ID must be on the form 'id:...'")))
         );
     }
 
-    @ParameterizedTest(name = "{0} -> malformed: {2}")
-    @MethodSource("failures")
-    void classifiesFailures(String name, Throwable failure, boolean malformed) {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("failuresThatAreNotMalformed")
+    void failsFailuresThatAreNotMalformedWithoutReportingThem(String name, Throwable failure) {
         CompletableFuture<Result> promise = handle("IGNORE", CompletableFuture.failedFuture(failure));
 
-        if (malformed) {
-            assertEquals(Result.Type.success, promise.join().type());
-            verify(reporter).report(record, failure);
-        } else {
-            CompletionException thrown = assertThrows(CompletionException.class, promise::join);
-            assertSame(failure, thrown.getCause());
-            verify(reporter, never()).report(any(), any());
-        }
+        CompletionException thrown = assertThrows(CompletionException.class, promise::join);
+        assertSame(failure, thrown.getCause());
+        verify(reporter, never()).report(any(), any());
+    }
+
+    @Test
+    void skipsMalformedDocumentsUnderIgnore() {
+        Throwable failure = new FeedException(ID, "Status 400 executing 'POST /document/v1/': bad request");
+
+        CompletableFuture<Result> promise = handle("IGNORE", CompletableFuture.failedFuture(failure));
+
+        assertEquals(Result.Type.success, promise.join().type());
+        verify(reporter).report(record, failure);
     }
 
     @Test
