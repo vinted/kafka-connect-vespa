@@ -1,11 +1,14 @@
 package com.vinted.kafka.connect.vespa.converters;
 
+import org.apache.kafka.connect.data.Decimal;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaBuilder;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -51,5 +54,15 @@ public class ValueConverterTest {
         SinkRecord record = new SinkRecord("topic", 0, null, "key", schema, value, 0);
 
         assertEquals("{\"title\":\"The Lord of the Rings\",\"description\":\"The Lord of the Rings is an epic high-fantasy novel by English author and scholar J. R. R. Tolkien.\",\"year\":1954}", subject.convert(record));
+    }
+
+    @Test
+    void writesDecimalsAsExactNumbers() {
+        Schema schema = SchemaBuilder.struct().field("price", Decimal.schema(2)).build();
+        Struct value = new Struct(schema).put("price", new BigDecimal("12345678901234567.50"));
+
+        SinkRecord record = new SinkRecord("topic", 0, null, "key", schema, value, 0);
+
+        assertEquals("{\"price\":12345678901234567.50}", subject.convert(record));
     }
 }

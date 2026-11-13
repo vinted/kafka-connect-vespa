@@ -36,6 +36,54 @@ Raw mode will execute kafka messages as vespa document api operations using docu
 operations to be executed in order, make sure they have a unique kafka key so that the operations are sent to the same
 kafka partitions. In this mode, connector does not use the kafka keys at all.
 
+### Data formats
+
+Records are deserialized by the converters configured on the worker or the connector (`key.converter`,
+`value.converter`), and the connector turns each value into Vespa document JSON. Values can be strings or bytes holding
+JSON, which are passed through as-is, or schema-based data from any converter, such as JSON, Avro, Protobuf or JSON
+Schema, which is converted to JSON.
+
+#### Avro with Schema Registry
+
+The connector bundles Confluent's `AvroConverter`, so it works on any Kafka Connect worker, with or without Confluent
+Platform:
+
+```json
+"key.converter": "io.confluent.connect.avro.AvroConverter",
+"key.converter.schema.registry.url": "http://schema-registry:8081",
+"value.converter": "io.confluent.connect.avro.AvroConverter",
+"value.converter.schema.registry.url": "http://schema-registry:8081"
+```
+
+Converter options such as Schema Registry authentication go under the same prefix, see
+[Confluent's documentation](https://docs.confluent.io/platform/current/schema-registry/connect.html). A
+[complete example](config/quickstart-vespa-avro.json) is in `config/`.
+
+In UPSERT mode the record becomes the document's `fields`; in RAW mode it must have the shape of a Vespa document
+operation, such as `put` and `fields`. Avro types map to Vespa JSON as follows:
+
+| Avro | Vespa JSON |
+|---|---|
+| record | struct, as an object |
+| array | array, or a dense tensor for numbers |
+| map | map or weighted set, or a mapped tensor for numbers |
+| enum, string, uuid | string |
+| bytes, fixed | base64 string, as Vespa `raw` expects |
+| decimal | exact number; use a Vespa `double` or `string` field |
+| date | days since the epoch |
+| time-millis | milliseconds since midnight |
+| timestamp-millis | milliseconds since the epoch |
+| timestamp-micros, time-micros, local-timestamp-millis | the raw long, in the unit of the logical type |
+| optional field set to null | left out of the document |
+
+Vespa has no date type, so dates and times are written as numbers; use the `TimestampConverter` single message
+transform to change their unit. Unions of more than one non-null type, and Avro fields that are not in the Vespa schema,
+are rejected by Vespa as malformed documents; drop such fields with the `ReplaceField` transform or set Vespa's
+`ignore-undefined-fields`.
+
+Keys must be strings or integers, as with any converter. A record key is an invalid message; extract a field with the
+`ExtractField$Key` transform instead.
+
 ### Configuration
 
 #### Connector

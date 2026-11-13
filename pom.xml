@@ -22,6 +22,7 @@
         <connect.utils.version>0.7.177</connect.utils.version>
         <junit.version>5.9.3</junit.version>
         <mockito.version>5.24.0</mockito.version>
+        <confluent.version>7.5.16</confluent.version>
     </properties>
     <licenses>
         <license>
@@ -30,6 +31,12 @@
             <distribution>repo</distribution>
         </license>
     </licenses>
+    <repositories>
+        <repository>
+            <id>confluent</id>
+            <url>https://packages.confluent.io/maven/</url>
+        </repository>
+    </repositories>
     <dependencies>
         <dependency>
             <groupId>org.apache.kafka</groupId>
@@ -40,6 +47,12 @@
             <groupId>org.apache.kafka</groupId>
             <artifactId>connect-json</artifactId>
             <version>${kafka.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.confluent</groupId>
+            <artifactId>kafka-connect-avro-converter</artifactId>
+            <version>${confluent.version}</version>
+            <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>com.yahoo.vespa</groupId>
@@ -197,6 +210,7 @@
                             <ownerLogo>doc/images/vinted.png</ownerLogo>
                             <componentTypes>
                                 <componentType>sink</componentType>
+                                <componentType>converter</componentType>
                             </componentTypes>
                             <tags>
                                 <tag>Vinted</tag>
