@@ -2,20 +2,18 @@ package com.vinted.kafka.connect.vespa;
 
 import com.vinted.kafka.connect.vespa.RetryBudget.Decision;
 import com.vinted.kafka.connect.vespa.RetryBudget.Outcome;
-import com.vinted.kafka.connect.vespa.feeders.IndexingFailure;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import static com.vinted.kafka.connect.vespa.feeders.IndexingFailure.TRANSIENT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -32,8 +30,8 @@ class RetryBudgetTest {
 
     @Test
     void retriesTransientFailuresWithAGrowingBackoff() {
-        Decision first = budget.failed(TRANSIENT);
-        Decision second = budget.failed(TRANSIENT);
+        Decision first = budget.failed(true);
+        Decision second = budget.failed(true);
 
         assertEquals(Outcome.RETRY, first.outcome);
         assertEquals(1, first.attempt);
@@ -45,19 +43,19 @@ class RetryBudgetTest {
 
     @Test
     void isExhaustedAfterMaxRetries() {
-        budget.failed(TRANSIENT);
-        budget.failed(TRANSIENT);
+        budget.failed(true);
+        budget.failed(true);
 
-        assertEquals(Outcome.EXHAUSTED, budget.failed(TRANSIENT).outcome);
+        assertEquals(Outcome.EXHAUSTED, budget.failed(true).outcome);
     }
 
     @Test
     void resetsAfterASuccessfulBatch() {
-        budget.failed(TRANSIENT);
-        budget.failed(TRANSIENT);
+        budget.failed(true);
+        budget.failed(true);
         budget.succeeded();
 
-        Decision decision = budget.failed(TRANSIENT);
+        Decision decision = budget.failed(true);
 
         assertEquals(Outcome.RETRY, decision.outcome);
         assertEquals(1, decision.attempt);
@@ -65,27 +63,26 @@ class RetryBudgetTest {
 
     @Test
     void resetsOnceExhausted() {
-        budget.failed(TRANSIENT);
-        budget.failed(TRANSIENT);
-        budget.failed(TRANSIENT);
+        budget.failed(true);
+        budget.failed(true);
+        budget.failed(true);
 
-        assertEquals(1, budget.failed(TRANSIENT).attempt);
+        assertEquals(1, budget.failed(true).attempt);
     }
 
-    @ParameterizedTest
-    @EnumSource(names = {"MALFORMED_DOCUMENT", "FATAL"})
-    void neverRetriesFailuresThatAreNotTransient(IndexingFailure failure) {
-        assertEquals(Outcome.NOT_TRANSIENT, budget.failed(failure).outcome);
+    @Test
+    void neverRetriesFailuresThatAreNotTransient() {
+        assertEquals(Outcome.NOT_TRANSIENT, budget.failed(false).outcome);
     }
 
     @Test
     void neverRetriesWhenRetriesAreDisabled() {
-        assertEquals(Outcome.EXHAUSTED, new RetryBudget(0, 1000).failed(TRANSIENT).outcome);
+        assertEquals(Outcome.EXHAUSTED, new RetryBudget(0, 1000).failed(true).outcome);
     }
 
     @Test
     void retriesAtOnceWithoutBackoff() {
-        assertEquals(0, new RetryBudget(2, 0).failed(TRANSIENT).backoffMs);
+        assertEquals(0, new RetryBudget(2, 0).failed(true).backoffMs);
     }
 
     @Test
@@ -93,7 +90,7 @@ class RetryBudgetTest {
         ErrantRecordReporter reportingOnce = budget.reportingOnce(reporter);
 
         reportingOnce.report(record("topic", 0, 7), ERROR);
-        budget.failed(TRANSIENT);
+        budget.failed(true);
         reportingOnce.report(record("topic", 0, 7), ERROR);
 
         verify(reporter, times(1)).report(any(), any());
@@ -111,13 +108,13 @@ class RetryBudgetTest {
     }
 
     @ParameterizedTest
-    @EnumSource(IndexingFailure.class)
-    void reportsARecordAgainOnceTheBudgetGivesUp(IndexingFailure failure) {
+    @ValueSource(booleans = {true, false})
+    void reportsARecordAgainOnceTheBudgetGivesUp(boolean isTransient) {
         RetryBudget noRetries = new RetryBudget(0, 1000);
         ErrantRecordReporter reportingOnce = noRetries.reportingOnce(reporter);
 
         reportingOnce.report(record("topic", 0, 7), ERROR);
-        noRetries.failed(failure);
+        noRetries.failed(isTransient);
         reportingOnce.report(record("topic", 0, 7), ERROR);
 
         verify(reporter, times(2)).report(any(), any());

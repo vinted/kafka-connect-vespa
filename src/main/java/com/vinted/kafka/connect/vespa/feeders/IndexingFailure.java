@@ -1,7 +1,6 @@
 package com.vinted.kafka.connect.vespa.feeders;
 
 import ai.vespa.feed.client.FeedException;
-import ai.vespa.feed.client.MultiFeedException;
 import ai.vespa.feed.client.OperationParseException;
 import ai.vespa.feed.client.ResultException;
 import ai.vespa.feed.client.ResultParseException;
@@ -10,13 +9,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /** The kind of an indexing failure, recognised from vespa-feed-client 8.781.11 exceptions, which have no status code. */
@@ -30,15 +26,6 @@ public enum IndexingFailure {
     public static IndexingFailure of(Throwable failure) {
         if (failure instanceof CompletionException && failure.getCause() != null) {
             return of(failure.getCause());
-        }
-
-        if (failure instanceof MultiFeedException) {
-            return ofBatch(((MultiFeedException) failure).feedExceptions());
-        }
-
-        // Its causes include the failure being handled, which may look like a malformed document.
-        if (failure instanceof IndexingResultHandlingException) {
-            return FATAL;
         }
 
         if (isMalformedDocument(failure)) {
@@ -55,11 +42,6 @@ public enum IndexingFailure {
                 && Arrays.stream(failure.getStackTrace()).limit(1).anyMatch(frame ->
                         frame.getClassName().equals("ai.vespa.feed.client.impl.HttpFeedClient")
                                 && frame.getMethodName().equals("verifyConnection"));
-    }
-
-    private static IndexingFailure ofBatch(Collection<FeedException> failures) {
-        Set<IndexingFailure> kinds = failures.stream().map(IndexingFailure::of).collect(Collectors.toSet());
-        return kinds.size() == 1 ? kinds.iterator().next() : FATAL;
     }
 
     private static boolean isMalformedDocument(Throwable failure) {

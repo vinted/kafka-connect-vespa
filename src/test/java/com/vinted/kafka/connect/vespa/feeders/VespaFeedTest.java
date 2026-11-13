@@ -2,7 +2,6 @@ package com.vinted.kafka.connect.vespa.feeders;
 
 import ai.vespa.feed.client.FeedClient;
 import ai.vespa.feed.client.FeedException;
-import ai.vespa.feed.client.MultiFeedException;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient;
 import org.apache.kafka.connect.data.Schema;
@@ -23,7 +22,7 @@ import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertSent;
 import static com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient.Answer.failure;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -65,7 +64,7 @@ class VespaFeedTest {
         VespaFeedException thrown = assertThrows(VespaFeedException.class, () -> feed.feed(batch()));
         feed.feed(batch());
 
-        assertEquals(IndexingFailure.TRANSIENT, thrown.failure());
+        assertTrue(thrown.isTransient());
         assertEquals(3, clients.built);
         assertSent(client, "put id:ns:dt::key-" + (offset - 1) + " {\"fields\":{\"field\":\"value\"}}");
     }
@@ -78,7 +77,7 @@ class VespaFeedTest {
                 () -> VespaFeed.open(config, null, new Clients(missingCertificate)));
 
         assertSame(missingCertificate, thrown.getCause());
-        assertEquals(IndexingFailure.FATAL, thrown.failure());
+        assertEquals("fatal failure: NoSuchFileException: client.pem", thrown.getMessage());
     }
 
     @Test
@@ -87,7 +86,7 @@ class VespaFeedTest {
                 () -> VespaFeed.open(config, null, new Clients(UNAUTHORIZED)));
 
         assertSame(UNAUTHORIZED, thrown.getCause());
-        assertEquals(IndexingFailure.FATAL, thrown.failure());
+        assertFalse(thrown.isTransient());
     }
 
     @Test
@@ -99,10 +98,8 @@ class VespaFeedTest {
         VespaFeedException thrown = assertThrows(VespaFeedException.class,
                 () -> feed.feed(List.of(record("key-1"), record("key-2"))));
 
-        MultiFeedException failures = assertInstanceOf(MultiFeedException.class, thrown.getCause());
-        assertEquals(2, failures.feedExceptions().size());
-        failures.feedExceptions().forEach(failure -> assertSame(closed, failure.getCause()));
-        assertEquals(IndexingFailure.FATAL, thrown.failure());
+        assertSame(closed, thrown.getCause());
+        assertEquals("fatal failure in 2 operations: IllegalStateException: Client is closed", thrown.getMessage());
     }
 
     @Test
