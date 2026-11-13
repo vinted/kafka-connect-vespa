@@ -6,7 +6,7 @@ import ai.vespa.feed.client.OperationParameters;
 import com.github.jcustenborder.kafka.connect.utils.VersionUtil;
 import com.vinted.kafka.connect.vespa.factories.VespaFeedClientFactory;
 import com.vinted.kafka.connect.vespa.factories.VespaOperationParametersFactory;
-import com.vinted.kafka.connect.vespa.feeders.TransientFailures;
+import com.vinted.kafka.connect.vespa.feeders.IndexingFailure;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeeder;
 import com.vinted.kafka.connect.vespa.feeders.VespaRawFeeder;
 import com.vinted.kafka.connect.vespa.feeders.VespaUpsertFeeder;
@@ -71,7 +71,7 @@ public class VespaSinkTask extends SinkTask {
         } catch (FeedException e) {
             // Building the client makes a handshake with Vespa. Like the Elasticsearch sink, start even when the
             // cluster is unreachable, e.g. mid-upgrade; feeding retries building it.
-            if (!TransientFailures.isTransient(e)) {
+            if (IndexingFailure.of(e) != IndexingFailure.TRANSIENT) {
                 throw e;
             }
             log.warn("Could not connect to Vespa, will retry when feeding records.", e);
@@ -99,7 +99,7 @@ public class VespaSinkTask extends SinkTask {
      * to back off; otherwise a {@link ConnectException} that fails the task.
      */
     private ConnectException failure(Exception e, int records) {
-        boolean isTransient = TransientFailures.isTransient(e);
+        boolean isTransient = IndexingFailure.of(e) == IndexingFailure.TRANSIENT;
 
         if (isTransient && retryAttempt < config.maxRetries) {
             retryAttempt++;
