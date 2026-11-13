@@ -22,7 +22,6 @@
         <connect.utils.version>0.7.177</connect.utils.version>
         <junit.version>5.9.3</junit.version>
         <mockito.version>5.24.0</mockito.version>
-        <!-- Confluent Platform 7.5 is built on Kafka 3.5. -->
         <confluent.version>7.5.16</confluent.version>
     </properties>
     <licenses>
@@ -49,7 +48,6 @@
             <artifactId>connect-json</artifactId>
             <version>${kafka.version}</version>
         </dependency>
-        <!-- Bundled so workers without Confluent Platform can use value.converter=io.confluent.connect.avro.AvroConverter. -->
         <dependency>
             <groupId>io.confluent</groupId>
             <artifactId>kafka-connect-avro-converter</artifactId>

@@ -27,10 +27,6 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 
-/**
- * Feeds records the way a worker configured with {@code value.converter=io.confluent.connect.avro.AvroConverter}
- * delivers them: serialized by a producer against Schema Registry, then deserialized by the converter.
- */
 class VespaAvroSinkTaskTest {
     private static final String TOPIC = "music";
 

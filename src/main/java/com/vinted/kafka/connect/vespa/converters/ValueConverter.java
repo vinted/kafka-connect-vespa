@@ -14,8 +14,7 @@ public class ValueConverter {
 
     static {
         JSON_CONVERTER = new JsonConverter();
-        // Decimals default to base64 of their unscaled bytes, which no Vespa field type can read. As plain JSON
-        // numbers, Vespa parses them according to the field type, double or string, without losing digits.
+        // Vespa cannot read the default base64 decimals.
         JSON_CONVERTER.configure(Map.of(
                 JsonConverterConfig.SCHEMAS_ENABLE_CONFIG, "false",
                 JsonConverterConfig.DECIMAL_FORMAT_CONFIG, DecimalFormat.NUMERIC.name()), false);
