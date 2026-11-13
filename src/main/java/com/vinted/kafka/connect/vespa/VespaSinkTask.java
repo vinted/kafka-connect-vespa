@@ -84,20 +84,21 @@ public class VespaSinkTask extends SinkTask {
 
         switch (decision.outcome) {
             case RETRY:
-                log.warn("Vespa is unavailable, retrying {} records in {} ms (retry {} of {}).",
-                        records, decision.backoffMs, decision.attempt, retryBudget.maxRetries(), e.getCause());
+                log.warn("Vespa is unavailable, retrying {} records in {} ms (retry {} of {}): {}",
+                        records, decision.backoffMs, decision.attempt, retryBudget.maxRetries(), e.reasons());
                 context.timeout(decision.backoffMs);
                 return new RetriableException(e.getCause());
             case EXHAUSTED:
-                log.error("Vespa is still unavailable after {} retries. To wait longer, increase '{}' or '{}'.",
-                        retryBudget.maxRetries(), VespaSinkConfig.MAX_RETRIES_CONFIG, VespaSinkConfig.RETRY_BACKOFF_MS_CONFIG,
-                        e.getCause());
+                // Connect logs the stack trace of the exception thrown here.
+                log.error("Vespa is still unavailable after {} retries: {}. To wait longer, increase '{}' or '{}'.",
+                        retryBudget.maxRetries(), e.reasons(), VespaSinkConfig.MAX_RETRIES_CONFIG,
+                        VespaSinkConfig.RETRY_BACKOFF_MS_CONFIG);
                 return e;
             case NOT_TRANSIENT:
             default:
                 // Each record's failure is logged where it is handled, and Connect logs the exception thrown here.
                 log.error("Failing the task after a {} failure feeding {} records to Vespa: {}",
-                        e.failure(), records, e.getCause().toString());
+                        e.failure(), records, e.reasons());
                 return e;
         }
     }
