@@ -4,7 +4,7 @@ import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.FeedClient;
 import ai.vespa.feed.client.OperationParameters;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
-import com.vinted.kafka.connect.vespa.mocks.MockVespaFeedClient;
+import com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -19,7 +19,7 @@ class FeedSessionTest {
     private static final DocumentId ID = DocumentId.of("id:ns:dt::a");
     private static final String DOCUMENT_JSON = "{\"put\":\"id:ns:dt::a\",\"fields\":{}}";
 
-    private final MockVespaFeedClient client = new MockVespaFeedClient();
+    private final RecordingFeedClient client = new RecordingFeedClient();
 
     @Test
     void closesTheClientOnceWhenOnlyDocumentOperationsWereSent() throws IOException {
@@ -29,7 +29,7 @@ class FeedSessionTest {
 
         session.close();
 
-        assertEquals(1, client.closes);
+        assertEquals(1, client.closes());
     }
 
     @Test
@@ -40,7 +40,7 @@ class FeedSessionTest {
 
         session.close();
 
-        assertEquals(1, client.closes);
+        assertEquals(1, client.closes());
     }
 
     @Test
@@ -59,16 +59,16 @@ class FeedSessionTest {
                 .timeout(Duration.ofMillis(20))
                 .route("custom")
                 .tracelevel(3);
-        assertEquals(expected, client.parameters.get(ID));
+        assertEquals(expected, client.operations().get(0).parameters);
     }
 
     @Test
     void isBrokenOnceTheCircuitBreakerOpens() {
         FeedSession session = new FeedSession(client, OperationParameters.empty());
-        client.circuitBreakerState = FeedClient.CircuitBreaker.State.HALF_OPEN;
+        client.circuitBreakerState(FeedClient.CircuitBreaker.State.HALF_OPEN);
         assertFalse(session.isBroken());
 
-        client.circuitBreakerState = FeedClient.CircuitBreaker.State.OPEN;
+        client.circuitBreakerState(FeedClient.CircuitBreaker.State.OPEN);
 
         assertTrue(session.isBroken());
     }

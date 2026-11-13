@@ -4,7 +4,7 @@ import ai.vespa.feed.client.FeedClient;
 import ai.vespa.feed.client.FeedException;
 import ai.vespa.feed.client.MultiFeedException;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
-import com.vinted.kafka.connect.vespa.mocks.MockVespaFeedClient;
+import com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.Test;
@@ -18,6 +18,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
+import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertNothingSent;
+import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertSent;
+import static com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient.Answer.failure;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -33,24 +36,25 @@ class VespaFeedTest {
     private final VespaSinkConfig config = new VespaSinkConfig(Map.of(
             VespaSinkConfig.NAMESPACE_CONFIG, "ns",
             VespaSinkConfig.DOCUMENT_TYPE_CONFIG, "dt"));
-    private final MockVespaFeedClient client = new MockVespaFeedClient();
+    private final RecordingFeedClient client = new RecordingFeedClient();
     private long offset;
 
     @Test
     void rebuildsTheFeedClientOnceItsCircuitBreakerOpens() {
-        MockVespaFeedClient replacement = new MockVespaFeedClient();
+        RecordingFeedClient replacement = new RecordingFeedClient();
         Clients clients = new Clients(client, replacement);
         VespaFeed feed = VespaFeed.open(config, null, clients);
 
         // Once open, the client aborts every operation and never recovers.
-        client.failure = new FeedException("Operation aborted");
-        client.circuitBreakerState = FeedClient.CircuitBreaker.State.OPEN;
+        client.answerAll(failure(new FeedException("Operation aborted")));
+        client.circuitBreakerState(FeedClient.CircuitBreaker.State.OPEN);
 
         feed.feed(batch());
 
-        assertTrue(client.closed);
+        assertTrue(client.isClosed());
         assertEquals(2, clients.built);
-        replacement.assertAllDocumentIds("id:ns:dt::key-" + (offset - 1));
+        assertNothingSent(client);
+        assertSent(replacement, "put id:ns:dt::key-" + (offset - 1) + " {\"fields\":{\"field\":\"value\"}}");
     }
 
     @Test
@@ -63,7 +67,7 @@ class VespaFeedTest {
 
         assertEquals(IndexingFailure.TRANSIENT, thrown.failure());
         assertEquals(3, clients.built);
-        client.assertAllDocumentIds("id:ns:dt::key-" + (offset - 1));
+        assertSent(client, "put id:ns:dt::key-" + (offset - 1) + " {\"fields\":{\"field\":\"value\"}}");
     }
 
     @Test
@@ -89,7 +93,7 @@ class VespaFeedTest {
     @Test
     void failsWithEveryFailedOperationEvenWhenItIsNotAFeedException() {
         IllegalStateException closed = new IllegalStateException("Client is closed");
-        client.failure = closed;
+        client.answerAll(failure(closed));
         VespaFeed feed = VespaFeed.open(config, null, new Clients(client));
 
         VespaFeedException thrown = assertThrows(VespaFeedException.class,
@@ -107,7 +111,7 @@ class VespaFeedTest {
 
         feed.close();
 
-        assertTrue(client.closed);
+        assertTrue(client.isClosed());
     }
 
     private List<SinkRecord> batch() {

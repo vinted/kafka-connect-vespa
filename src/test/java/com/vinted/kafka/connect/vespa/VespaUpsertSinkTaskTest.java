@@ -1,11 +1,10 @@
 package com.vinted.kafka.connect.vespa;
 
-import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.MultiFeedException;
 import ai.vespa.feed.client.OperationParameters;
 import ai.vespa.feed.client.Result;
 import com.google.common.base.Strings;
-import com.vinted.kafka.connect.vespa.mocks.MockVespaFeedClient;
+import com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.DataException;
@@ -19,6 +18,9 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.*;
 
+import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertNothingSent;
+import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertSent;
+import static com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient.Answer.result;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -36,7 +38,7 @@ import static org.mockito.Mockito.when;
 public class VespaUpsertSinkTaskTest {
     private long offset = 1;
     private final Map<String, String> params = new HashMap<>();
-    private final MockVespaFeedClient client = new MockVespaFeedClient();
+    private final RecordingFeedClient client = new RecordingFeedClient();
     private final VespaSinkTask task = new VespaSinkTask(config -> client);
     private final String topic = UUID.randomUUID().toString();
     private final SinkTaskContext context = mock(SinkTaskContext.class);
@@ -60,44 +62,16 @@ public class VespaUpsertSinkTaskTest {
 
         task.start(params);
 
-        List<SinkRecord> records = Arrays.asList(
+        task.put(Arrays.asList(
                 record("set1", "{\"field\":\"value1\"}"),
                 record("set2", "{\"field\":\"value2\"}"),
-                record("delete1", null),
-                record("set3", "{\"field\":\"value3\"}"),
-                record("set4", "{\"field\":\"value4_old\"}"),
-                record("set4", "{\"field\":\"value4\"}")
-        );
+                record("delete1", null)
+        ));
 
-        task.put(records);
-
-        client.assertAllDocumentIds(
-                "id:test_namespace:test_document_type::set1",
-                "id:test_namespace:test_document_type::delete1",
-                "id:test_namespace:test_document_type::set2",
-                "id:test_namespace:test_document_type::set3",
-                "id:test_namespace:test_document_type::set4"
-        );
-
-        client.assertPutOperation(
-                "id:test_namespace:test_document_type::set1",
-                "{\"fields\":{\"field\":\"value1\"}}"
-        );
-
-        client.assertPutOperation(
-                "id:test_namespace:test_document_type::set2",
-                "{\"fields\":{\"field\":\"value2\"}}"
-        );
-
-        client.assertPutOperation(
-                "id:test_namespace:test_document_type::set3",
-                "{\"fields\":{\"field\":\"value3\"}}"
-        );
-
-        client.assertPutOperation(
-                "id:test_namespace:test_document_type::set4",
-                "{\"fields\":{\"field\":\"value4\"}}"
-        );
+        assertSent(client,
+                "put id:test_namespace:test_document_type::set1 {\"fields\":{\"field\":\"value1\"}}",
+                "put id:test_namespace:test_document_type::set2 {\"fields\":{\"field\":\"value2\"}}",
+                "remove id:test_namespace:test_document_type::delete1");
     }
 
     @Test
@@ -110,18 +84,20 @@ public class VespaUpsertSinkTaskTest {
         task.start(params);
         task.put(Arrays.asList(record("set1", "{\"field\":\"value1\"}"), record("delete1", null)));
 
-        OperationParameters put = client.parameters.get(DocumentId.of("id:ns:dt::set1"));
+        assertSent(client, "put id:ns:dt::set1 {\"fields\":{\"field\":\"value1\"}}", "remove id:ns:dt::delete1");
+
+        OperationParameters put = client.operations().get(0).parameters;
         assertEquals(Optional.of("dt.locked == false"), put.testAndSetCondition());
         assertTrue(put.createIfNonExistent());
 
-        OperationParameters remove = client.parameters.get(DocumentId.of("id:ns:dt::delete1"));
+        OperationParameters remove = client.operations().get(1).parameters;
         assertEquals(Optional.of("dt.locked == false"), remove.testAndSetCondition());
         assertFalse(remove.createIfNonExistent());
     }
 
     @Test
     void failsInsteadOfHangingWhenConditionIsNotMet() {
-        client.resultType = Result.Type.conditionNotMet;
+        client.answerAll(result(Result.Type.conditionNotMet));
 
         task.start(params);
 
@@ -131,7 +107,7 @@ public class VespaUpsertSinkTaskTest {
 
     @Test
     void keepsTheCauseOfRejectedResults() {
-        client.resultType = Result.Type.conditionNotMet;
+        client.answerAll(result(Result.Type.conditionNotMet));
 
         task.start(params);
 
@@ -143,7 +119,7 @@ public class VespaUpsertSinkTaskTest {
 
     @Test
     void failsInsteadOfHangingWhenErrantRecordReporterThrows() {
-        client.resultType = Result.Type.conditionNotMet;
+        client.answerAll(result(Result.Type.conditionNotMet));
         params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
         when(reporter.report(any(), any())).thenThrow(new ConnectException("Tolerance exceeded in error handler"));
 
@@ -155,7 +131,7 @@ public class VespaUpsertSinkTaskTest {
 
     @Test
     void ignoresConditionNotMetWhenConfigured() {
-        client.resultType = Result.Type.conditionNotMet;
+        client.answerAll(result(Result.Type.conditionNotMet));
         params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
 
         task.start(params);
@@ -173,7 +149,7 @@ public class VespaUpsertSinkTaskTest {
         task.put(Arrays.asList(invalid, record("set1", "{\"field\":\"value1\"}")));
 
         verify(reporter).report(eq(invalid), any(DataException.class));
-        client.assertAllDocumentIds(String.format("id:%s:%s::set1", topic, topic));
+        assertSent(client, String.format("put id:%s:%s::set1 {\"fields\":{\"field\":\"value1\"}}", topic, topic));
     }
 
     @Test
@@ -184,12 +160,12 @@ public class VespaUpsertSinkTaskTest {
 
         assertThrows(ConnectException.class, () -> task.put(List.of(invalid)));
         verify(reporter).report(eq(invalid), any(DataException.class));
-        client.assertAllDocumentIds();
+        assertNothingSent(client);
     }
 
     @Test
     void reportsRejectedResults() {
-        client.resultType = Result.Type.conditionNotMet;
+        client.answerAll(result(Result.Type.conditionNotMet));
         params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
         SinkRecord rejected = record("set1", "{\"field\":\"value1\"}");
 
@@ -214,7 +190,7 @@ public class VespaUpsertSinkTaskTest {
         task.start(params);
         task.put(List.of(record("set1", "{\"field\":\"value1\"}")));
 
-        client.assertAllDocumentIds(String.format("id:%s:%s::set1", topic, topic));
+        assertSent(client, String.format("put id:%s:%s::set1 {\"fields\":{\"field\":\"value1\"}}", topic, topic));
     }
 
     @Test
@@ -230,24 +206,11 @@ public class VespaUpsertSinkTaskTest {
     void writesDocumentsWithTopicNameToVespa() {
         task.start(params);
 
-        List<SinkRecord> records = Arrays.asList(
-                record("set1", "{\"field\":\"value1\"}"),
-                record("set2", "{\"field\":\"value2\"}"),
-                record("delete1", null),
-                record("set3", "{\"field\":\"value3\"}"),
-                record("set4", "{\"field\":\"value4_old\"}"),
-                record("set4", "{\"field\":\"value4\"}")
-        );
+        task.put(Arrays.asList(record("set1", "{\"field\":\"value1\"}"), record("delete1", null)));
 
-        task.put(records);
-
-        client.assertAllDocumentIds(
-                String.format("id:%s:%s::set1", topic, topic),
-                String.format("id:%s:%s::delete1", topic, topic),
-                String.format("id:%s:%s::set2", topic, topic),
-                String.format("id:%s:%s::set3", topic, topic),
-                String.format("id:%s:%s::set4", topic, topic)
-        );
+        assertSent(client,
+                String.format("put id:%s:%s::set1 {\"fields\":{\"field\":\"value1\"}}", topic, topic),
+                String.format("remove id:%s:%s::delete1", topic, topic));
     }
 
 

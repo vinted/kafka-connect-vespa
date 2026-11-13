@@ -1,9 +1,8 @@
 package com.vinted.kafka.connect.vespa;
 
-import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.OperationParameters;
 import com.google.common.base.Strings;
-import com.vinted.kafka.connect.vespa.mocks.MockVespaFeedClient;
+import com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.DataException;
@@ -17,6 +16,8 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.*;
 
+import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertNothingSent;
+import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertSent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -29,7 +30,7 @@ import static org.mockito.Mockito.when;
 public class VespaRawSinkTaskTest {
     private long offset = 1;
     private final Map<String, String> params = new HashMap<>();
-    private final MockVespaFeedClient client = new MockVespaFeedClient();
+    private final RecordingFeedClient client = new RecordingFeedClient();
     private final VespaSinkTask task = new VespaSinkTask(config -> client);
     private final ErrantRecordReporter reporter = mock(ErrantRecordReporter.class);
 
@@ -58,14 +59,7 @@ public class VespaRawSinkTaskTest {
 
         task.put(records);
 
-        client.assertAllDocumentIds(
-                "id:test_namespace:test_document_type::set1"
-        );
-
-        client.assertPutOperation(
-                "id:test_namespace:test_document_type::set1",
-                "{\"fields\":{\"field\":\"value1\"}}"
-        );
+        assertSent(client, "put id:test_namespace:test_document_type::set1 {\"fields\":{\"field\":\"value1\"}}");
     }
 
     @Test
@@ -76,9 +70,7 @@ public class VespaRawSinkTaskTest {
 
         task.put(records);
 
-        client.assertAllDocumentIds(
-                "id:test_namespace:test_document_type::del2"
-        );
+        assertSent(client, "remove id:test_namespace:test_document_type::del2");
     }
 
     @Test
@@ -90,7 +82,7 @@ public class VespaRawSinkTaskTest {
 
         verify(reporter).report(eq(malformedPut), any());
         verify(reporter).report(eq(malformedRemove), any());
-        client.assertAllDocumentIds();
+        assertNothingSent(client);
     }
 
     @Test
@@ -98,7 +90,7 @@ public class VespaRawSinkTaskTest {
         task.put(Collections.singletonList(record("set1", null)));
 
         verify(reporter, never()).report(any(), any());
-        client.assertAllDocumentIds();
+        assertNothingSent(client);
     }
 
     @Test
@@ -111,9 +103,7 @@ public class VespaRawSinkTaskTest {
         task.put(records);
 
         verify(reporter, never()).report(any(), any());
-        client.assertAllDocumentIds(
-                "id:test_namespace:test_document_type::set2"
-        );
+        assertSent(client, "put id:test_namespace:test_document_type::set2 {\"fields\":{\"field\":\"value2\"}}");
     }
 
     @Test
@@ -126,8 +116,11 @@ public class VespaRawSinkTaskTest {
                 record("set2", "{\"put\":\"id:test_namespace:test_document_type::set2\",\"condition\":\"test_document_type.n > 1\",\"fields\":{}}")
         ));
 
-        OperationParameters unconditional = client.parameters.get(DocumentId.of("id:test_namespace:test_document_type::set1"));
-        OperationParameters conditional = client.parameters.get(DocumentId.of("id:test_namespace:test_document_type::set2"));
+        assertSent(client,
+                "put id:test_namespace:test_document_type::set1 {\"fields\":{}}",
+                "put id:test_namespace:test_document_type::set2 {\"fields\":{}}");
+        OperationParameters unconditional = client.operations().get(0).parameters;
+        OperationParameters conditional = client.operations().get(1).parameters;
         assertEquals(Optional.empty(), unconditional.testAndSetCondition());
         assertEquals(Optional.of("test_document_type.n > 1"), conditional.testAndSetCondition());
         assertEquals(Optional.of(Duration.ofMinutes(1)), conditional.timeout());
@@ -142,7 +135,7 @@ public class VespaRawSinkTaskTest {
         task.put(Arrays.asList(invalid, record("set1", "{\"put\":\"id:test_namespace:test_document_type::set1\",\"fields\":{}}")));
 
         verify(reporter).report(eq(invalid), any(DataException.class));
-        client.assertAllDocumentIds("id:test_namespace:test_document_type::set1");
+        assertSent(client, "put id:test_namespace:test_document_type::set1 {\"fields\":{}}");
     }
 
     @Test
@@ -154,7 +147,7 @@ public class VespaRawSinkTaskTest {
         assertThrows(ConnectException.class, () -> task.put(records));
 
         verify(reporter).report(eq(invalid), any(DataException.class));
-        client.assertAllDocumentIds();
+        assertNothingSent(client);
     }
 
     private void restart() {

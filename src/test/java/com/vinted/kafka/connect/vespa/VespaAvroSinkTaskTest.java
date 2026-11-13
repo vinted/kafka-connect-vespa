@@ -1,6 +1,7 @@
 package com.vinted.kafka.connect.vespa;
 
-import com.vinted.kafka.connect.vespa.mocks.MockVespaFeedClient;
+import ai.vespa.feed.client.DocumentId;
+import com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient;
 import io.confluent.connect.avro.AvroConverter;
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
 import org.apache.avro.Conversions;
@@ -23,7 +24,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
+import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertNothingSent;
+import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertSent;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 
@@ -62,7 +67,7 @@ class VespaAvroSinkTaskTest {
     private final AvroConverter valueConverter = new AvroConverter();
 
     private final Map<String, String> params = new HashMap<>();
-    private final MockVespaFeedClient client = new MockVespaFeedClient();
+    private final RecordingFeedClient client = new RecordingFeedClient();
     private final VespaSinkTask task = new VespaSinkTask(config -> client);
     private long offset;
 
@@ -89,7 +94,7 @@ class VespaAvroSinkTaskTest {
 
         task.put(List.of(record("album-1", album())));
 
-        client.assertPutOperation("id:ns:album::album-1", "{\"fields\":{"
+        assertSent(client, "put id:ns:album::album-1 {\"fields\":{"
                 + "\"title\":\"Abbey Road\","
                 + "\"year\":1969,"
                 + "\"rating\":null,"
@@ -110,7 +115,7 @@ class VespaAvroSinkTaskTest {
 
         task.put(List.of(record("album-1", null)));
 
-        client.assertRemoveDocumentIds("id:ns:album::album-1");
+        assertSent(client, "remove id:ns:album::album-1");
     }
 
     @Test
@@ -119,7 +124,8 @@ class VespaAvroSinkTaskTest {
 
         task.put(List.of(record(42L, album())));
 
-        client.assertPutDocumentIds("id:ns:album::42");
+        assertEquals(List.of(DocumentId.of("id:ns:album::42")),
+                client.operations().stream().map(operation -> operation.documentId).collect(Collectors.toList()));
     }
 
     @Test
@@ -129,7 +135,7 @@ class VespaAvroSinkTaskTest {
         task.start(params);
 
         assertThrows(ConnectException.class, () -> task.put(List.of(record(key, album()))));
-        client.assertAllDocumentIds();
+        assertNothingSent(client);
     }
 
     @Test
@@ -145,7 +151,7 @@ class VespaAvroSinkTaskTest {
 
         task.put(List.of(record("album-1", put)));
 
-        client.assertPutOperation("id:ns:album::album-1", "{\"fields\":{\"title\":\"Abbey Road\",\"year\":1969}}");
+        assertSent(client, "put id:ns:album::album-1 {\"fields\":{\"title\":\"Abbey Road\",\"year\":1969}}");
     }
 
     private SinkRecord record(Object key, Object value) {
