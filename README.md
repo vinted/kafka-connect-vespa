@@ -36,6 +36,9 @@ Raw mode will execute kafka messages as vespa document api operations using docu
 operations to be executed in order, make sure they have a unique kafka key so that the operations are sent to the same
 kafka partitions. In this mode, connector does not use the kafka keys at all.
 
+Tombstones carry no operation and, without the kafka key, no document id, so they are skipped. To delete documents, send
+a `remove` operation.
+
 ### Data formats
 
 Records are deserialized by the converters configured on the worker or the connector (`key.converter`,
