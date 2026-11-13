@@ -43,7 +43,7 @@ public class IndexingResultHandler {
             try {
                 complete(record, result, throwable, promise);
             } catch (Throwable t) {
-                // whenComplete swallows anything thrown here, which would leave the promise, and FeedClient.await,
+                // whenComplete swallows anything thrown here, which would leave the promise, and the feed awaiting it,
                 // waiting forever. The errant record reporter throws "Tolerance exceeded" under errors.tolerance=none.
                 promise.completeExceptionally(new FeedException(
                         "Failed to handle the indexing result of " + Records.describe(record), t));
@@ -72,7 +72,7 @@ public class IndexingResultHandler {
         }
 
         logFailure(record, failure, throwable);
-        promise.completeExceptionally(asFeedException(throwable));
+        promise.completeExceptionally(throwable);
     }
 
     private static void logFailure(SinkRecord record, IndexingFailure failure, Throwable throwable) {
@@ -102,15 +102,8 @@ public class IndexingResultHandler {
             case FAIL:
             default:
                 log.error(errorMessage(record), cause);
-                promise.completeExceptionally(asFeedException(cause));
+                promise.completeExceptionally(cause);
         }
-    }
-
-    /**
-     * {@code FeedClient.await} casts every failure to {@link FeedException} and silently drops any that is not one.
-     */
-    private static FeedException asFeedException(Throwable throwable) {
-        return throwable instanceof FeedException ? (FeedException) throwable : new FeedException(throwable);
     }
 
     private static String ignoreMessage(SinkRecord record) {

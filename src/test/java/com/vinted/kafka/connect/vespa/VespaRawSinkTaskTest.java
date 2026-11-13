@@ -23,7 +23,7 @@ public class VespaRawSinkTaskTest {
     private long offset = 1;
     private final Map<String, String> params = new HashMap<>();
     private final MockVespaFeedClient client = new MockVespaFeedClient();
-    private final VespaSinkTask task = new VespaSinkTask();
+    private final VespaSinkTask task = new VespaSinkTask(config -> client);
     private final ErrantRecordReporter reporter = mock(ErrantRecordReporter.class);
 
     @BeforeEach
@@ -35,7 +35,7 @@ public class VespaRawSinkTaskTest {
         SinkTaskContext context = mock(SinkTaskContext.class);
         when(context.errantRecordReporter()).thenReturn(reporter);
         task.initialize(context);
-        task.start(params, client);
+        task.start(params);
     }
 
     @AfterEach
