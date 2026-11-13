@@ -5,6 +5,7 @@ import ai.vespa.feed.client.FeedException;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient;
 import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.Test;
 
@@ -15,6 +16,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
 import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertNothingSent;
@@ -32,6 +34,8 @@ class VespaFeedTest {
     private static final FeedException HANDSHAKE_FAILED = new FeedException(
             "failed handshake with server after PT30S", new java.net.ConnectException("Connection refused"));
 
+    private static final ErrantRecordReporter NO_REPORTER = (record, error) -> CompletableFuture.completedFuture(null);
+
     private final VespaSinkConfig config = new VespaSinkConfig(Map.of(
             VespaSinkConfig.NAMESPACE_CONFIG, "ns",
             VespaSinkConfig.DOCUMENT_TYPE_CONFIG, "dt"));
@@ -42,7 +46,7 @@ class VespaFeedTest {
     void rebuildsTheFeedClientOnceItsCircuitBreakerOpens() {
         RecordingFeedClient replacement = new RecordingFeedClient();
         Clients clients = new Clients(client, replacement);
-        VespaFeed feed = VespaFeed.open(config, null, clients);
+        VespaFeed feed = VespaFeed.open(config, NO_REPORTER, clients);
 
         // Once open, the client aborts every operation and never recovers.
         client.answerAll(failure(new FeedException("Operation aborted")));
@@ -60,7 +64,7 @@ class VespaFeedTest {
     void opensWhileVespaIsUnreachableAndConnectsWhenFeeding() {
         Clients clients = new Clients(HANDSHAKE_FAILED, HANDSHAKE_FAILED, client);
 
-        VespaFeed feed = assertDoesNotThrow(() -> VespaFeed.open(config, null, clients));
+        VespaFeed feed = assertDoesNotThrow(() -> VespaFeed.open(config, NO_REPORTER, clients));
         VespaFeedException thrown = assertThrows(VespaFeedException.class, () -> feed.feed(batch()));
         feed.feed(batch());
 
@@ -74,7 +78,7 @@ class VespaFeedTest {
         UncheckedIOException missingCertificate = new UncheckedIOException(new NoSuchFileException("client.pem"));
 
         VespaFeedException thrown = assertThrows(VespaFeedException.class,
-                () -> VespaFeed.open(config, null, new Clients(missingCertificate)));
+                () -> VespaFeed.open(config, NO_REPORTER, new Clients(missingCertificate)));
 
         assertSame(missingCertificate, thrown.getCause());
         assertEquals("fatal failure: NoSuchFileException: client.pem", thrown.getMessage());
@@ -83,7 +87,7 @@ class VespaFeedTest {
     @Test
     void failsToOpenWhenTheHandshakeFailsForANonTransientReason() {
         VespaFeedException thrown = assertThrows(VespaFeedException.class,
-                () -> VespaFeed.open(config, null, new Clients(UNAUTHORIZED)));
+                () -> VespaFeed.open(config, NO_REPORTER, new Clients(UNAUTHORIZED)));
 
         assertSame(UNAUTHORIZED, thrown.getCause());
         assertFalse(thrown.isTransient());
@@ -93,7 +97,7 @@ class VespaFeedTest {
     void failsWithEveryFailedOperationEvenWhenItIsNotAFeedException() {
         IllegalStateException closed = new IllegalStateException("Client is closed");
         client.answerAll(failure(closed));
-        VespaFeed feed = VespaFeed.open(config, null, new Clients(client));
+        VespaFeed feed = VespaFeed.open(config, NO_REPORTER, new Clients(client));
 
         VespaFeedException thrown = assertThrows(VespaFeedException.class,
                 () -> feed.feed(List.of(record("key-1"), record("key-2"))));
@@ -104,7 +108,7 @@ class VespaFeedTest {
 
     @Test
     void closesTheFeedClient() throws IOException {
-        VespaFeed feed = VespaFeed.open(config, null, new Clients(client));
+        VespaFeed feed = VespaFeed.open(config, NO_REPORTER, new Clients(client));
 
         feed.close();
 

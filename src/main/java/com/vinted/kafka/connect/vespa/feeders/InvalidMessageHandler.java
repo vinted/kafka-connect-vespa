@@ -21,9 +21,6 @@ public class InvalidMessageHandler {
     private final boolean dropInvalidMessage;
     private final ErrantRecordReporter reporter;
 
-    /**
-     * @param reporter the errant record reporter, or {@code null} when none is configured
-     */
     public InvalidMessageHandler(VespaSinkConfig config, ErrantRecordReporter reporter) {
         this.dropInvalidMessage = config.dropInvalidMessage();
         this.reporter = reporter;
@@ -38,9 +35,7 @@ public class InvalidMessageHandler {
         try {
             return Optional.of(conversion.apply(record));
         } catch (DataException exception) {
-            if (reporter != null) {
-                reporter.report(record, exception);
-            }
+            reporter.report(record, exception);
 
             // The exception message can echo record content, so only its type is logged and rethrown.
             String failure = String.format("Can't convert %s. Failure type: %s",

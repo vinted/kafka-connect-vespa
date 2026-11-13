@@ -25,9 +25,6 @@ public class IndexingResultHandler {
     private final VespaSinkConfig.BehaviorOnMalformedDoc behaviorOnMalformedDoc;
     private final ErrantRecordReporter reporter;
 
-    /**
-     * @param reporter the errant record reporter, or {@code null} when none is configured
-     */
     public IndexingResultHandler(VespaSinkConfig config, ErrantRecordReporter reporter) {
         this.behaviorOnMalformedDoc = config.behaviorOnMalformedDoc();
         this.reporter = reporter;
@@ -80,9 +77,7 @@ public class IndexingResultHandler {
     }
 
     private Optional<Failure> skipOrFail(SinkRecord record, Failure failure) {
-        if (reporter != null) {
-            reporter.report(record, failure.cause);
-        }
+        reporter.report(record, failure.cause);
 
         switch (behaviorOnMalformedDoc) {
             case IGNORE:

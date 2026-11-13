@@ -53,13 +53,6 @@ class InvalidMessageHandlerTest {
     }
 
     @Test
-    void dropsInvalidMessagesWithoutErrantRecordReporter() {
-        InvalidMessageHandler handler = new InvalidMessageHandler(config(true), null);
-
-        assertEquals(Optional.empty(), handler.convert(record, this::fail));
-    }
-
-    @Test
     void leavesOtherConversionFailuresAlone() {
         IllegalStateException bug = new IllegalStateException("bug");
 
