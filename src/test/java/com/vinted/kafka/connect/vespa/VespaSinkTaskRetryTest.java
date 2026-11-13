@@ -1,6 +1,8 @@
 package com.vinted.kafka.connect.vespa;
 
 import ai.vespa.feed.client.FeedException;
+import ai.vespa.feed.client.Result;
+import com.vinted.kafka.connect.vespa.mocks.CallbackExecutor;
 import com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -16,8 +18,14 @@ import org.mockito.ArgumentCaptor;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.stream.Collectors;
 
 import static com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient.Answer.failure;
+import static com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient.Answer.result;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -37,7 +45,7 @@ class VespaSinkTaskRetryTest {
     private final Map<String, String> params = new HashMap<>();
     private final SinkTaskContext context = mock(SinkTaskContext.class);
     private final ErrantRecordReporter reporter = mock(ErrantRecordReporter.class);
-    private final RecordingFeedClient client = new RecordingFeedClient();
+    private RecordingFeedClient client = new RecordingFeedClient();
     private final VespaSinkTask task = new VespaSinkTask(config -> client);
     private long offset;
 
@@ -101,6 +109,34 @@ class VespaSinkTaskRetryTest {
         assertNotRetriable(() -> task.put(batch));
 
         verify(reporter, times(1)).report(eq(malformed), any());
+    }
+
+    @Test
+    void reportsEachSkippedRecordOnceWhileResultsArriveConcurrentlyOnCallbackThreads() throws Exception {
+        params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
+        Queue<String> reports = new ConcurrentLinkedQueue<>();
+        when(context.errantRecordReporter()).thenReturn((record, error) -> {
+            reports.add(record.key() + " on " + Thread.currentThread().getName());
+            return CompletableFuture.completedFuture(null);
+        });
+        List<SinkRecord> batch = List.of(record("malformed-1"), record("malformed-2"), record("rejected"), record("unavailable"));
+
+        try (CallbackExecutor callbacks = new CallbackExecutor(batch.size())) {
+            client = new RecordingFeedClient(callbacks)
+                    .answer("id:ns:dt::malformed-1", failure(BAD_REQUEST))
+                    .answer("id:ns:dt::malformed-2", failure(BAD_REQUEST))
+                    .answer("id:ns:dt::rejected", result(Result.Type.conditionNotMet))
+                    .answer("id:ns:dt::unavailable", failure(UNAVAILABLE));
+            task.start(params);
+
+            assertThrows(RetriableException.class, () -> task.put(batch));
+            assertNotRetriable(() -> task.put(batch));
+        }
+
+        String callbackThread = " on " + CallbackExecutor.THREAD_NAME;
+        assertEquals(List.of("malformed-1" + callbackThread, "malformed-2" + callbackThread, "rejected" + callbackThread),
+                reports.stream().sorted().collect(Collectors.toList()));
+        assertEquals(2 * batch.size(), client.operations().size(), "operations sent over both deliveries");
     }
 
     @Test

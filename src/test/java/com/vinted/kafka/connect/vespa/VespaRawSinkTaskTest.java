@@ -74,6 +74,22 @@ public class VespaRawSinkTaskTest {
     }
 
     @Test
+    void sendsEveryOperationInOrderEvenForTheSameDocument() {
+        task.put(Arrays.asList(
+                record("doc", "{\"put\":\"id:test_namespace:test_document_type::doc\",\"fields\":{\"n\":1}}"),
+                record("doc", "{\"update\":\"id:test_namespace:test_document_type::doc\",\"fields\":{\"n\":{\"increment\":1}}}"),
+                record("doc", "{\"remove\":\"id:test_namespace:test_document_type::doc\"}"),
+                record("doc", "{\"put\":\"id:test_namespace:test_document_type::doc\",\"fields\":{\"n\":3}}")
+        ));
+
+        assertSent(client,
+                "put id:test_namespace:test_document_type::doc {\"fields\":{\"n\":1}}",
+                "update id:test_namespace:test_document_type::doc {\"fields\":{\"n\":{\"increment\":1}}}",
+                "remove id:test_namespace:test_document_type::doc",
+                "put id:test_namespace:test_document_type::doc {\"fields\":{\"n\":3}}");
+    }
+
+    @Test
     void reportsAndSkipsMalformedPayloads() {
         SinkRecord malformedPut = record("set1", "{put\":\"id:test_namespace:test_document_type::set1\"}");
         SinkRecord malformedRemove = record("del2", "{remove\":\"id:test_namespace:test_document_type::del2\"}");
