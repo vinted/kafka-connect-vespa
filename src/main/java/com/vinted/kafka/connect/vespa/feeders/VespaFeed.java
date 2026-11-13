@@ -3,11 +3,8 @@ package com.vinted.kafka.connect.vespa.feeders;
 import ai.vespa.feed.client.FeedClient;
 import ai.vespa.feed.client.FeedException;
 import ai.vespa.feed.client.MultiFeedException;
-import ai.vespa.feed.client.OperationParameters;
 import ai.vespa.feed.client.Result;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
-import com.vinted.kafka.connect.vespa.factories.VespaOperationParametersFactory;
-import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
@@ -29,16 +26,18 @@ public class VespaFeed implements Closeable {
     private static final Logger log = LoggerFactory.getLogger(VespaFeed.class);
 
     private final VespaSinkConfig config;
-    private final OperationParameters parameters;
-    private final ErrantRecordReporter reporter;
+    private final RecordTranslator<?> translator;
+    private final InvalidMessageHandler invalidMessageHandler;
+    private final IndexingResultHandler indexingResultHandler;
     private final Function<VespaSinkConfig, FeedClient> clients;
     private FeedClient client;
-    private VespaFeeder feeder;
+    private VespaFeeder<?> feeder;
 
     private VespaFeed(VespaSinkConfig config, ErrantRecordReporter reporter, Function<VespaSinkConfig, FeedClient> clients) {
         this.config = config;
-        this.parameters = VespaOperationParametersFactory.create(config);
-        this.reporter = reporter;
+        this.translator = RecordTranslator.of(config);
+        this.invalidMessageHandler = new InvalidMessageHandler(config, reporter);
+        this.indexingResultHandler = new IndexingResultHandler(config, reporter);
         this.clients = clients;
     }
 
@@ -81,7 +80,7 @@ public class VespaFeed implements Closeable {
         }
     }
 
-    private VespaFeeder feeder() {
+    private VespaFeeder<?> feeder() {
         if (feeder != null && client.circuitBreakerState() != OPEN) {
             return feeder;
         }
@@ -93,22 +92,11 @@ public class VespaFeed implements Closeable {
         }
 
         client = clients.apply(config);
-        feeder = createFeeder(client);
+        feeder = new VespaFeeder<>(client, translator, invalidMessageHandler, indexingResultHandler);
         return feeder;
     }
 
-    private VespaFeeder createFeeder(FeedClient client) {
-        switch (config.operationalMode) {
-            case UPSERT:
-                return new VespaUpsertFeeder(client, parameters, reporter, config);
-            case RAW:
-                return new VespaRawFeeder(client, parameters, reporter, config);
-            default:
-                throw new ConnectException(String.format("Unknown operational mode: %s", config.operationalMode));
-        }
-    }
-
-    private static void closeQuietly(VespaFeeder feeder) {
+    private static void closeQuietly(VespaFeeder<?> feeder) {
         try {
             feeder.close();
         } catch (Exception e) {

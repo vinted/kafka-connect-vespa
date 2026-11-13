@@ -1,8 +1,12 @@
 package com.vinted.kafka.connect.vespa;
 
+import ai.vespa.feed.client.DocumentId;
+import ai.vespa.feed.client.OperationParameters;
 import com.google.common.base.Strings;
 import com.vinted.kafka.connect.vespa.mocks.MockVespaFeedClient;
 import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.errors.ConnectException;
+import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTaskContext;
@@ -10,8 +14,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.*;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -107,6 +114,56 @@ public class VespaRawSinkTaskTest {
         client.assertAllDocumentIds(
                 "id:test_namespace:test_document_type::set2"
         );
+    }
+
+    @Test
+    void appliesTheConditionOfTheOperationRatherThanTheConfiguredOne() {
+        params.put(VespaSinkConfig.OPERATION_CONDITION_CONFIG, "test_document_type.locked == false");
+        restart();
+
+        task.put(Arrays.asList(
+                record("set1", "{\"put\":\"id:test_namespace:test_document_type::set1\",\"fields\":{}}"),
+                record("set2", "{\"put\":\"id:test_namespace:test_document_type::set2\",\"condition\":\"test_document_type.n > 1\",\"fields\":{}}")
+        ));
+
+        OperationParameters unconditional = client.parameters.get(DocumentId.of("id:test_namespace:test_document_type::set1"));
+        OperationParameters conditional = client.parameters.get(DocumentId.of("id:test_namespace:test_document_type::set2"));
+        assertEquals(Optional.empty(), unconditional.testAndSetCondition());
+        assertEquals(Optional.of("test_document_type.n > 1"), conditional.testAndSetCondition());
+        assertEquals(Optional.of(Duration.ofMinutes(1)), conditional.timeout());
+    }
+
+    @Test
+    void reportsAndDropsInvalidMessagesWhenConfigured() {
+        params.put(VespaSinkConfig.DROP_INVALID_MESSAGE_CONFIG, "true");
+        restart();
+        SinkRecord invalid = unconvertible();
+
+        task.put(Arrays.asList(invalid, record("set1", "{\"put\":\"id:test_namespace:test_document_type::set1\",\"fields\":{}}")));
+
+        verify(reporter).report(eq(invalid), any(DataException.class));
+        client.assertAllDocumentIds("id:test_namespace:test_document_type::set1");
+    }
+
+    @Test
+    void reportsAndFailsOnInvalidMessagesBeforeSendingAnyOperation() {
+        SinkRecord invalid = unconvertible();
+        List<SinkRecord> records = Arrays.asList(
+                record("set1", "{\"put\":\"id:test_namespace:test_document_type::set1\",\"fields\":{}}"), invalid);
+
+        assertThrows(ConnectException.class, () -> task.put(records));
+
+        verify(reporter).report(eq(invalid), any(DataException.class));
+        client.assertAllDocumentIds();
+    }
+
+    private void restart() {
+        task.stop();
+        task.start(params);
+    }
+
+    private SinkRecord unconvertible() {
+        return new SinkRecord("topic", 1, Schema.STRING_SCHEMA, "key", Schema.STRING_SCHEMA, 42, offset++);
     }
 
     private SinkRecord record(String key, String value) {
