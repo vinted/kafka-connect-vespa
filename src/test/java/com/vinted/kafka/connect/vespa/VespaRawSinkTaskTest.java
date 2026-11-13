@@ -15,6 +15,7 @@ import java.util.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -83,6 +84,29 @@ public class VespaRawSinkTaskTest {
         verify(reporter).report(eq(malformedPut), any());
         verify(reporter).report(eq(malformedRemove), any());
         client.assertAllDocumentIds();
+    }
+
+    @Test
+    void skipsTombstones() {
+        task.put(Collections.singletonList(record("set1", null)));
+
+        verify(reporter, never()).report(any(), any());
+        client.assertAllDocumentIds();
+    }
+
+    @Test
+    void skipsTombstonesAmongOperations() {
+        List<SinkRecord> records = Arrays.asList(
+                record("set1", null),
+                record("set2", "{\"put\":\"id:test_namespace:test_document_type::set2\",\"fields\":{\"field\":\"value2\"}}")
+        );
+
+        task.put(records);
+
+        verify(reporter, never()).report(any(), any());
+        client.assertAllDocumentIds(
+                "id:test_namespace:test_document_type::set2"
+        );
     }
 
     private SinkRecord record(String key, String value) {

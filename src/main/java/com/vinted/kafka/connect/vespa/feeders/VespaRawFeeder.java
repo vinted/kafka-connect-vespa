@@ -8,6 +8,8 @@ import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.converters.ValueConverter;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Collection;
@@ -15,6 +17,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 public class VespaRawFeeder implements VespaFeeder {
+    private static final Logger log = LoggerFactory.getLogger(VespaRawFeeder.class);
+
     private final JsonFeeder feeder;
     private final ValueConverter valueConverter;
     private final IndexingResultHandler indexingResultHandler;
@@ -33,12 +37,21 @@ public class VespaRawFeeder implements VespaFeeder {
 
     @Override
     public void feed(Collection<SinkRecord> collection) {
-        FeedClient.await(collection.stream().map(this::feedSingle).collect(Collectors.toList()));
+        FeedClient.await(collection.stream().filter(this::isOperation).map(this::feedSingle).collect(Collectors.toList()));
     }
 
     @Override
     public void close() throws IOException {
         feeder.close();
+    }
+
+    private boolean isOperation(SinkRecord record) {
+        if (record.value() != null) {
+            return true;
+        }
+
+        log.debug("Skipping tombstone {}.", Records.describe(record));
+        return false;
     }
 
     private CompletableFuture<Result> feedSingle(SinkRecord record) {
