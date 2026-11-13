@@ -80,7 +80,8 @@ class IndexingFailureContractTest {
                 Arguments.of(403, JSON, vespaError("Forbidden")),
                 Arguments.of(503, JSON, vespaError("Service unavailable")),
                 Arguments.of(502, HTML, BAD_GATEWAY_PAGE),
-                Arguments.of(503, "text/plain", "no healthy upstream"));
+                Arguments.of(503, "text/plain", "no healthy upstream"),
+                Arguments.of(503, null, ""));
     }
 
     @ParameterizedTest(name = "{0} {1} -> {3}")

@@ -9,6 +9,7 @@ import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Objects;
 import java.util.Set;
@@ -39,7 +40,16 @@ public enum IndexingFailure {
             return MALFORMED_DOCUMENT;
         }
 
-        return failure instanceof FeedException && isTransient((FeedException) failure) ? TRANSIENT : FATAL;
+        return failure instanceof FeedException && isTransient((FeedException) failure)
+                || isUntypedHandshakeRejection(failure) ? TRANSIENT : FATAL;
+    }
+
+    // The client switches on the Content-Type of a non-OK handshake response, so a missing one throws this.
+    private static boolean isUntypedHandshakeRejection(Throwable failure) {
+        return failure instanceof NullPointerException
+                && Arrays.stream(failure.getStackTrace()).limit(1).anyMatch(frame ->
+                        frame.getClassName().equals("ai.vespa.feed.client.impl.HttpFeedClient")
+                                && frame.getMethodName().equals("verifyConnection"));
     }
 
     private static IndexingFailure ofBatch(Collection<FeedException> failures) {

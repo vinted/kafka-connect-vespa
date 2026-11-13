@@ -57,6 +57,7 @@ class IndexingFailureTest {
                 Arguments.of("load balancer error page", new ResultParseException(ID, "Expected 'START_OBJECT', but found 'null' in: <html>502 Bad Gateway</html>"), TRANSIENT),
                 Arguments.of("unparseable result, even with status 400", new ResultParseException(ID, "Status 400: failed parsing response"), TRANSIENT),
                 Arguments.of("handshake rejected", new FeedException("server responded non-OK to handshake: Bad Gateway"), TRANSIENT),
+                Arguments.of("handshake rejected without a content type", nullPointerAt("ai.vespa.feed.client.impl.HttpFeedClient", "verifyConnection"), TRANSIENT),
                 Arguments.of("circuit breaker open", new FeedException("Operation aborted"), TRANSIENT),
                 Arguments.of("all transient in batch", new MultiFeedException(List.of(UNAVAILABLE, UNAVAILABLE)), TRANSIENT),
                 Arguments.of("completion wrapper", new CompletionException(UNAVAILABLE), TRANSIENT),
@@ -71,6 +72,7 @@ class IndexingFailureTest {
                 Arguments.of("any fatal in batch", new MultiFeedException(List.of(UNAVAILABLE, UNAUTHORIZED)), FATAL),
                 Arguments.of("empty batch failure", new MultiFeedException(List.of()), FATAL),
                 Arguments.of("invalid message", new DataException("Key is used as document id and can not be null."), FATAL),
+                Arguments.of("null pointer outside the handshake", nullPointerAt("ai.vespa.feed.client.impl.HttpFeedClient", "send"), FATAL),
                 Arguments.of("missing certificate file", new UncheckedIOException(new NoSuchFileException("client.pem")), FATAL)
         );
     }
@@ -79,5 +81,11 @@ class IndexingFailureTest {
     @MethodSource("failures")
     void classifiesFailures(String name, Throwable failure, IndexingFailure expected) {
         assertEquals(expected, IndexingFailure.of(failure));
+    }
+
+    private static NullPointerException nullPointerAt(String className, String methodName) {
+        NullPointerException failure = new NullPointerException();
+        failure.setStackTrace(new StackTraceElement[]{new StackTraceElement(className, methodName, null, -1)});
+        return failure;
     }
 }
