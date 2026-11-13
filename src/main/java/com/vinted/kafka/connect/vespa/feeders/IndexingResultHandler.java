@@ -60,9 +60,8 @@ public class IndexingResultHandler {
             } catch (Throwable t) {
                 // whenComplete swallows anything thrown here, which would leave the promise, and FeedClient.await,
                 // waiting forever. The errant record reporter throws "Tolerance exceeded" under errors.tolerance=none.
-                promise.completeExceptionally(new FeedException(String.format(
-                        "Failed to handle the indexing result of record %s-%d@%d",
-                        record.topic(), record.kafkaPartition(), record.kafkaOffset()), t));
+                promise.completeExceptionally(new FeedException(
+                        "Failed to handle the indexing result of " + Records.describe(record), t));
             }
         });
 
@@ -98,13 +97,13 @@ public class IndexingResultHandler {
     }
 
     private static String ignoreMessage(SinkRecord record) {
-        return String.format("Failed to index document '%s'. Ignoring and will not index it.", record);
+        return String.format("Failed to index %s. Ignoring and will not index it.", Records.describe(record));
     }
 
     private static String errorMessage(SinkRecord record) {
         return String.format(
-                "Failed to index document '%s'. To ignore future document like this, change the configuration '%s' to '%s'.",
-                record,
+                "Failed to index %s. To ignore future document like this, change the configuration '%s' to '%s'.",
+                Records.describe(record),
                 VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG,
                 VespaSinkConfig.BehaviorOnMalformedDoc.IGNORE
         );

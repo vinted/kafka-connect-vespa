@@ -42,13 +42,17 @@ public class InvalidMessageHandler {
                 reporter.report(record, exception);
             }
 
-            log.error("Encountered invalid record {}", record, exception);
+            // The exception message can echo record content, so only its type is logged and rethrown.
+            String failure = String.format("Can't convert %s. Failure type: %s",
+                    Records.describe(record), exception.getClass().getName());
 
             if (dropInvalidMessage) {
+                log.error(failure);
                 return Optional.empty();
-            } else {
-                throw new DataException(exception);
             }
+
+            log.trace(failure, exception);
+            throw new DataException(failure);
         }
     }
 }

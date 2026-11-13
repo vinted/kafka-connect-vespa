@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -21,7 +22,7 @@ import static org.mockito.Mockito.verify;
 class InvalidMessageHandlerTest {
     private final ErrantRecordReporter reporter = mock(ErrantRecordReporter.class);
     private final SinkRecord record = new SinkRecord("topic", 0, Schema.STRING_SCHEMA, "1", Schema.STRING_SCHEMA, "{}", 7);
-    private final DataException invalid = new DataException("Key is used as document id and can not be null.");
+    private final DataException invalid = new DataException("Cannot convert value 'secret-value'");
 
     @Test
     void returnsConvertedRecord() {
@@ -37,10 +38,18 @@ class InvalidMessageHandlerTest {
 
     @Test
     void reportsAndFailsOnInvalidMessagesByDefault() {
+        assertThrows(DataException.class, () -> handler(false).convert(record, this::fail));
+
+        verify(reporter).report(record, invalid);
+    }
+
+    @Test
+    void keepsRecordContentOutOfTheFailure() {
         DataException thrown = assertThrows(DataException.class, () -> handler(false).convert(record, this::fail));
 
-        assertSame(invalid, thrown.getCause());
-        verify(reporter).report(record, invalid);
+        assertEquals("Can't convert record from topic=topic partition=0 offset=7. Failure type: "
+                + DataException.class.getName(), thrown.getMessage());
+        assertNull(thrown.getCause());
     }
 
     @Test
