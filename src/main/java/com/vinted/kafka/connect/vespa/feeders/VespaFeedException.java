@@ -1,25 +1,17 @@
 package com.vinted.kafka.connect.vespa.feeders;
 
-import ai.vespa.feed.client.FeedException;
 import org.apache.kafka.connect.errors.ConnectException;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * The one way a {@link VespaFeed} fails. Its message is why: each distinct reason with its kind, one example and, for
  * failed operations, how many failed for it. Its cause is the first failure.
  */
 public class VespaFeedException extends ConnectException {
-    private static final Pattern STATUS = Pattern.compile("Status (\\d{3}) executing");
-    private static final int MAX_DESCRIPTION = 300;
-
     /** What made the feed fail. */
     public enum Kind {
         INVALID_MESSAGE("invalid message"),
@@ -83,7 +75,7 @@ public class VespaFeedException extends ConnectException {
     }
 
     private static String describe(Failure failure) {
-        return failure.kind + ": " + summary(rootCause(failure.cause));
+        return failure.kind + ": " + IndexingFailure.describe(failure.cause);
     }
 
     private static String describe(List<Failure> failures) {
@@ -92,34 +84,13 @@ public class VespaFeedException extends ConnectException {
 
         return byReason.values().stream()
                 .map(same -> String.format("%s in %d %s: %s", same.get(0).kind, same.size(),
-                        same.size() == 1 ? "operation" : "operations", summary(rootCause(same.get(0).cause))))
+                        same.size() == 1 ? "operation" : "operations", IndexingFailure.describe(same.get(0).cause)))
                 .collect(Collectors.joining("; "));
     }
 
     // Messages carry document ids and paths, so failures are told apart by kind, type and HTTP status only.
     private static String reason(Failure failure) {
-        Throwable rootCause = rootCause(failure.cause);
-        Matcher status = STATUS.matcher(String.valueOf(rootCause.getMessage()));
-        return failure.kind + " " + rootCause.getClass().getName() + (status.find() ? " " + status.group(1) : "");
-    }
-
-    private static String summary(Throwable failure) {
-        String message = messageWithoutDocumentId(failure);
-        String description = failure.getClass().getSimpleName() + (message == null ? "" : ": " + message);
-        return description.length() <= MAX_DESCRIPTION ? description : description.substring(0, MAX_DESCRIPTION) + "...";
-    }
-
-    private static String messageWithoutDocumentId(Throwable failure) {
-        String message = failure.getMessage();
-        if (message == null || !(failure instanceof FeedException)) {
-            return message;
-        }
-
-        String prefix = ((FeedException) failure).documentId().map(id -> "(" + id + ") ").orElse("");
-        return message.startsWith(prefix) ? message.substring(prefix.length()) : message;
-    }
-
-    private static Throwable rootCause(Throwable failure) {
-        return Stream.iterate(failure, Objects::nonNull, Throwable::getCause).reduce((cause, next) -> next).orElse(failure);
+        return failure.kind + " " + IndexingFailure.rootCause(failure.cause).getClass().getName()
+                + IndexingFailure.status(failure.cause).map(status -> " " + status).orElse("");
     }
 }

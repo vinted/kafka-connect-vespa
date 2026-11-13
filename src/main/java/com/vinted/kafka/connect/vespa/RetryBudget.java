@@ -1,10 +1,8 @@
 package com.vinted.kafka.connect.vespa;
 
+import com.vinted.kafka.connect.vespa.feeders.RecordCoordinates;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
-import org.apache.kafka.connect.sink.SinkRecord;
 
-import java.util.Arrays;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -33,7 +31,7 @@ final class RetryBudget {
     private final int maxRetries;
     private final long initialBackoffMs;
     // Written from feed client callback threads as well as the task thread.
-    private final Set<List<Object>> reported = ConcurrentHashMap.newKeySet();
+    private final Set<RecordCoordinates> reported = ConcurrentHashMap.newKeySet();
     private int attempt;
 
     RetryBudget(int maxRetries, long initialBackoffMs) {
@@ -51,7 +49,7 @@ final class RetryBudget {
             return null;
         }
 
-        return (record, error) -> reported.add(coordinates(record))
+        return (record, error) -> reported.add(RecordCoordinates.of(record))
                 ? reporter.report(record, error)
                 : CompletableFuture.completedFuture(null);
     }
@@ -82,9 +80,5 @@ final class RetryBudget {
     private void reset() {
         attempt = 0;
         reported.clear();
-    }
-
-    private static List<Object> coordinates(SinkRecord record) {
-        return Arrays.asList(record.topic(), record.kafkaPartition(), record.kafkaOffset());
     }
 }
