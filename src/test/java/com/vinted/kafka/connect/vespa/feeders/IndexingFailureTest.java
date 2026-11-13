@@ -29,9 +29,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class IndexingFailureTest {
     private static final DocumentId ID = DocumentId.of("id:ns:dt::1");
-    private static final FeedException BAD_REQUEST = new FeedException(ID, "Status 400 executing 'POST /document/v1/': bad request");
-    private static final FeedException UNAVAILABLE = new FeedException(ID, "Status 503 executing 'POST /document/v1/': unavailable");
-    private static final FeedException UNAUTHORIZED = new FeedException(ID, "Status 401 executing 'POST /document/v1/': unauthorized");
+    private static final FeedException BAD_REQUEST = new FeedException(ID, "Status 400 executing 'POST /document/v1/ns/dt/docid/1': bad request");
+    private static final FeedException UNAVAILABLE = new FeedException(ID, "Status 503 executing 'POST /document/v1/ns/dt/docid/1': unavailable");
+    private static final FeedException UNAUTHORIZED = new FeedException(ID, "Status 401 executing 'POST /document/v1/ns/dt/docid/1': unauthorized");
 
     static Stream<Arguments> failures() {
         return Stream.of(
@@ -40,7 +40,7 @@ class IndexingFailureTest {
                 Arguments.of("illegal code point", new FeedException(ID, "String field value contains illegal code point 0x1"), MALFORMED_DOCUMENT),
                 Arguments.of("unparseable operation", new OperationParseException("No document id for document at offset 0"), MALFORMED_DOCUMENT),
                 Arguments.of("unparseable document JSON", new OperationParseException("Failed to parse document JSON", new JsonParseException(null, "Unexpected character")), MALFORMED_DOCUMENT),
-                Arguments.of("400 despite a network cause", new FeedException(ID, "Status 400 executing 'POST /document/v1/': bad request", new IOException("reset")), MALFORMED_DOCUMENT),
+                Arguments.of("400 despite a network cause", new FeedException(ID, "Status 400 executing 'POST /document/v1/ns/dt/docid/1': bad request", new IOException("reset")), MALFORMED_DOCUMENT),
                 Arguments.of("completion wrapper of 400", new CompletionException(BAD_REQUEST), MALFORMED_DOCUMENT),
                 Arguments.of("all malformed in batch", new MultiFeedException(List.of(BAD_REQUEST, BAD_REQUEST)), MALFORMED_DOCUMENT),
                 // Network and unreachable host
@@ -48,14 +48,14 @@ class IndexingFailureTest {
                 Arguments.of("unknown host", new FeedException(ID, new UnknownHostException("vespa")), TRANSIENT),
                 Arguments.of("timeout", new FeedException(ID, new TimeoutException("operation timed out after 'PT1M'")), TRANSIENT),
                 Arguments.of("HTTP/2 session closed", new FeedException(ID, new IllegalStateException("session closed")), TRANSIENT),
-                Arguments.of("handshake failed", new FeedException("failed handshake with server after PT30S", new java.net.ConnectException("Connection refused")), TRANSIENT),
+                Arguments.of("handshake failed", new FeedException("failed handshake with server after PT0.001S: java.net.ConnectException: Connection refused", new java.net.ConnectException("Connection refused")), TRANSIENT),
                 Arguments.of("handshake timed out", new FeedException("timed out during handshake with server", new TimeoutException()), TRANSIENT),
                 // Server errors
                 Arguments.of("503", UNAVAILABLE, TRANSIENT),
-                Arguments.of("500", new FeedException(ID, "Status 500 executing 'POST /document/v1/': internal error"), TRANSIENT),
+                Arguments.of("500", new FeedException(ID, "Status 500 executing 'POST /document/v1/ns/dt/docid/1': internal error"), TRANSIENT),
                 Arguments.of("502, 504, 507", new ResultException(ID, "insufficient storage", null), TRANSIENT),
-                Arguments.of("load balancer error page", new ResultParseException(ID, "Expected 'START_OBJECT', but found 'null' in: <html>502 Bad Gateway</html>"), TRANSIENT),
-                Arguments.of("unparseable result, even with status 400", new ResultParseException(ID, "Status 400: failed parsing response"), TRANSIENT),
+                Arguments.of("load balancer error page", new ResultParseException(ID, new JsonParseException(null, "Unexpected character ('<' (code 60)): expected a valid value")), TRANSIENT),
+                Arguments.of("4xx with an empty body, whose status is lost", new ResultParseException(ID, "Expected 'START_OBJECT', but found 'null' in: "), TRANSIENT),
                 Arguments.of("handshake rejected", new FeedException("server responded non-OK to handshake: Bad Gateway"), TRANSIENT),
                 Arguments.of("handshake rejected without a content type", nullPointerAt("ai.vespa.feed.client.impl.HttpFeedClient", "verifyConnection"), TRANSIENT),
                 Arguments.of("circuit breaker open", new FeedException("Operation aborted"), TRANSIENT),
@@ -63,7 +63,7 @@ class IndexingFailureTest {
                 Arguments.of("completion wrapper", new CompletionException(UNAVAILABLE), TRANSIENT),
                 // Anything else
                 Arguments.of("401", UNAUTHORIZED, FATAL),
-                Arguments.of("404", new FeedException(ID, "Status 404 executing 'POST /document/v1/': not found"), FATAL),
+                Arguments.of("404", new FeedException(ID, "Status 404 executing 'POST /document/v1/ns/dt/docid/1': not found"), FATAL),
                 Arguments.of("condition not met", new FeedException(ID, "Result{type=conditionNotMet}"), FATAL),
                 Arguments.of("unparseable operation with a network cause", new OperationParseException("Failed to read document", new IOException("reset")), FATAL),
                 Arguments.of("malformed document id in RAW mode", new FeedException(new IllegalArgumentException("Document ID must be on the form 'id:...'")), FATAL),
