@@ -63,7 +63,7 @@ class VespaAvroSinkTaskTest {
 
     private final Map<String, String> params = new HashMap<>();
     private final MockVespaFeedClient client = new MockVespaFeedClient();
-    private final VespaSinkTask task = new VespaSinkTask();
+    private final VespaSinkTask task = new VespaSinkTask(config -> client);
     private long offset;
 
     @BeforeEach
@@ -85,7 +85,7 @@ class VespaAvroSinkTaskTest {
 
     @Test
     void putsAvroRecordsAsVespaFields() {
-        task.start(params, client);
+        task.start(params);
 
         task.put(List.of(record("album-1", album())));
 
@@ -106,7 +106,7 @@ class VespaAvroSinkTaskTest {
 
     @Test
     void removesDocumentsOnAvroTombstones() {
-        task.start(params, client);
+        task.start(params);
 
         task.put(List.of(record("album-1", null)));
 
@@ -115,7 +115,7 @@ class VespaAvroSinkTaskTest {
 
     @Test
     void usesAvroLongKeysAsDocumentIds() {
-        task.start(params, client);
+        task.start(params);
 
         task.put(List.of(record(42L, album())));
 
@@ -126,7 +126,7 @@ class VespaAvroSinkTaskTest {
     void treatsAvroRecordKeysAsInvalidMessages() {
         GenericRecord key = new GenericData.Record(KEY);
         key.put("id", "album-1");
-        task.start(params, client);
+        task.start(params);
 
         assertThrows(ConnectException.class, () -> task.put(List.of(record(key, album()))));
         client.assertAllDocumentIds();
@@ -141,7 +141,7 @@ class VespaAvroSinkTaskTest {
         GenericRecord put = new GenericData.Record(RAW_PUT);
         put.put("put", "id:ns:album::album-1");
         put.put("fields", fields);
-        task.start(params, client);
+        task.start(params);
 
         task.put(List.of(record("album-1", put)));
 

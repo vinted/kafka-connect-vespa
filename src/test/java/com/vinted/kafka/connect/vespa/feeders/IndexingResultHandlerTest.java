@@ -104,7 +104,7 @@ class IndexingResultHandlerTest {
     }
 
     @Test
-    void failsRejectedResultsWithFeedExceptionSoTheCauseSurvivesAwait() {
+    void failsRejectedResultsWithAFeedExceptionForTheirDocument() {
         CompletableFuture<Result> promise = handle("FAIL", CompletableFuture.completedFuture(result(Result.Type.conditionNotMet)));
 
         CompletionException thrown = assertThrows(CompletionException.class, promise::join);

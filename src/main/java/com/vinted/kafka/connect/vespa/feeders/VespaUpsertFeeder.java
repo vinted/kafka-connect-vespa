@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
-public class VespaUpsertFeeder implements VespaFeeder {
+class VespaUpsertFeeder implements VespaFeeder {
     private final VespaSinkConfig config;
     private final FeedClient client;
     private final OperationParameters parameters;
@@ -25,7 +25,7 @@ public class VespaUpsertFeeder implements VespaFeeder {
     private final InvalidMessageHandler invalidMessageHandler;
     private final IndexingResultHandler indexingResultHandler;
 
-    public VespaUpsertFeeder(FeedClient client, OperationParameters parameters, ErrantRecordReporter reporter, VespaSinkConfig config) {
+    VespaUpsertFeeder(FeedClient client, OperationParameters parameters, ErrantRecordReporter reporter, VespaSinkConfig config) {
         this.config = config;
         this.client = client;
         this.parameters = parameters;
@@ -36,8 +36,8 @@ public class VespaUpsertFeeder implements VespaFeeder {
     }
 
     @Override
-    public void feed(Collection<SinkRecord> collection) {
-        List<CompletableFuture<Result>> operations = collection
+    public List<CompletableFuture<Result>> feed(Collection<SinkRecord> records) {
+        return records
                 .stream()
                 .flatMap(record -> invalidMessageHandler.convert(record, this::toOperation).stream())
                 .collect(Collectors.toMap(x -> x.documentId, x -> x, (existing, replacement) -> replacement))
@@ -45,8 +45,6 @@ public class VespaUpsertFeeder implements VespaFeeder {
                 .stream()
                 .map(this::feedSingle)
                 .collect(Collectors.toList());
-
-        FeedClient.await(operations);
     }
 
     @Override

@@ -37,7 +37,7 @@ public class VespaUpsertSinkTaskTest {
     private long offset = 1;
     private final Map<String, String> params = new HashMap<>();
     private final MockVespaFeedClient client = new MockVespaFeedClient();
-    private final VespaSinkTask task = new VespaSinkTask();
+    private final VespaSinkTask task = new VespaSinkTask(config -> client);
     private final String topic = UUID.randomUUID().toString();
     private final SinkTaskContext context = mock(SinkTaskContext.class);
     private final ErrantRecordReporter reporter = mock(ErrantRecordReporter.class);
@@ -58,7 +58,7 @@ public class VespaUpsertSinkTaskTest {
         params.put(VespaSinkConfig.NAMESPACE_CONFIG, "test_namespace");
         params.put(VespaSinkConfig.DOCUMENT_TYPE_CONFIG, "test_document_type");
 
-        task.start(params, client);
+        task.start(params);
 
         List<SinkRecord> records = Arrays.asList(
                 record("set1", "{\"field\":\"value1\"}"),
@@ -107,7 +107,7 @@ public class VespaUpsertSinkTaskTest {
         params.put(VespaSinkConfig.OPERATION_CONDITION_CONFIG, "dt.locked == false");
         params.put(VespaSinkConfig.OPERATION_CREATE_IF_NON_EXISTENT_CONFIG, "true");
 
-        task.start(params, client);
+        task.start(params);
         task.put(Arrays.asList(record("set1", "{\"field\":\"value1\"}"), record("delete1", null)));
 
         OperationParameters put = client.parameters.get(DocumentId.of("id:ns:dt::set1"));
@@ -123,7 +123,7 @@ public class VespaUpsertSinkTaskTest {
     void failsInsteadOfHangingWhenConditionIsNotMet() {
         client.resultType = Result.Type.conditionNotMet;
 
-        task.start(params, client);
+        task.start(params);
 
         assertTimeoutPreemptively(Duration.ofSeconds(10), () ->
                 assertThrows(ConnectException.class, () -> task.put(List.of(record("set1", "{\"field\":\"value1\"}")))));
@@ -133,7 +133,7 @@ public class VespaUpsertSinkTaskTest {
     void keepsTheCauseOfRejectedResults() {
         client.resultType = Result.Type.conditionNotMet;
 
-        task.start(params, client);
+        task.start(params);
 
         ConnectException thrown = assertThrows(ConnectException.class,
                 () -> task.put(List.of(record("set1", "{\"field\":\"value1\"}"))));
@@ -147,7 +147,7 @@ public class VespaUpsertSinkTaskTest {
         params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
         when(reporter.report(any(), any())).thenThrow(new ConnectException("Tolerance exceeded in error handler"));
 
-        task.start(params, client);
+        task.start(params);
 
         assertTimeoutPreemptively(Duration.ofSeconds(10), () ->
                 assertThrows(ConnectException.class, () -> task.put(List.of(record("set1", "{\"field\":\"value1\"}")))));
@@ -158,7 +158,7 @@ public class VespaUpsertSinkTaskTest {
         client.resultType = Result.Type.conditionNotMet;
         params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
 
-        task.start(params, client);
+        task.start(params);
 
         assertTimeoutPreemptively(Duration.ofSeconds(10), () ->
                 task.put(List.of(record("set1", "{\"field\":\"value1\"}"))));
@@ -169,7 +169,7 @@ public class VespaUpsertSinkTaskTest {
         params.put(VespaSinkConfig.DROP_INVALID_MESSAGE_CONFIG, "true");
         SinkRecord invalid = record(null, "{\"field\":\"value1\"}");
 
-        task.start(params, client);
+        task.start(params);
         task.put(Arrays.asList(invalid, record("set1", "{\"field\":\"value1\"}")));
 
         verify(reporter).report(eq(invalid), any(DataException.class));
@@ -180,7 +180,7 @@ public class VespaUpsertSinkTaskTest {
     void reportsAndFailsOnInvalidMessagesByDefault() {
         SinkRecord invalid = record(null, "{\"field\":\"value1\"}");
 
-        task.start(params, client);
+        task.start(params);
 
         assertThrows(ConnectException.class, () -> task.put(List.of(invalid)));
         verify(reporter).report(eq(invalid), any(DataException.class));
@@ -193,7 +193,7 @@ public class VespaUpsertSinkTaskTest {
         params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
         SinkRecord rejected = record("set1", "{\"field\":\"value1\"}");
 
-        task.start(params, client);
+        task.start(params);
         task.put(List.of(rejected));
 
         verify(reporter).report(eq(rejected), any());
@@ -201,7 +201,7 @@ public class VespaUpsertSinkTaskTest {
 
     @Test
     void doesNotReportSuccessfulRecords() {
-        task.start(params, client);
+        task.start(params);
         task.put(List.of(record("set1", "{\"field\":\"value1\"}")));
 
         verify(reporter, never()).report(any(), any());
@@ -211,7 +211,7 @@ public class VespaUpsertSinkTaskTest {
     void feedsWithoutErrantRecordReporter() {
         when(context.errantRecordReporter()).thenReturn(null);
 
-        task.start(params, client);
+        task.start(params);
         task.put(List.of(record("set1", "{\"field\":\"value1\"}")));
 
         client.assertAllDocumentIds(String.format("id:%s:%s::set1", topic, topic));
@@ -220,15 +220,15 @@ public class VespaUpsertSinkTaskTest {
     @Test
     void startsOnRuntimesWithoutErrantRecordReporter() {
         doThrow(new NoSuchMethodError()).when(context).errantRecordReporter();
-        task.start(params, client);
+        task.start(params);
 
         doThrow(new NoClassDefFoundError()).when(context).errantRecordReporter();
-        task.start(params, client);
+        task.start(params);
     }
 
     @Test
     void writesDocumentsWithTopicNameToVespa() {
-        task.start(params, client);
+        task.start(params);
 
         List<SinkRecord> records = Arrays.asList(
                 record("set1", "{\"field\":\"value1\"}"),

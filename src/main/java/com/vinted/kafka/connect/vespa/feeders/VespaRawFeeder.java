@@ -13,17 +13,18 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Collection;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
-public class VespaRawFeeder implements VespaFeeder {
+class VespaRawFeeder implements VespaFeeder {
     private static final Logger log = LoggerFactory.getLogger(VespaRawFeeder.class);
 
     private final JsonFeeder feeder;
     private final ValueConverter valueConverter;
     private final IndexingResultHandler indexingResultHandler;
 
-    public VespaRawFeeder(FeedClient client, OperationParameters parameters, ErrantRecordReporter reporter, VespaSinkConfig config) {
+    VespaRawFeeder(FeedClient client, OperationParameters parameters, ErrantRecordReporter reporter, VespaSinkConfig config) {
         JsonFeeder.Builder builder = JsonFeeder.builder(client);
 
         parameters.timeout().ifPresent(builder::withTimeout);
@@ -36,8 +37,8 @@ public class VespaRawFeeder implements VespaFeeder {
     }
 
     @Override
-    public void feed(Collection<SinkRecord> collection) {
-        FeedClient.await(collection.stream().filter(this::isOperation).map(this::feedSingle).collect(Collectors.toList()));
+    public List<CompletableFuture<Result>> feed(Collection<SinkRecord> records) {
+        return records.stream().filter(this::isOperation).map(this::feedSingle).collect(Collectors.toList());
     }
 
     @Override
