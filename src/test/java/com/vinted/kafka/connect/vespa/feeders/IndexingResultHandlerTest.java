@@ -7,7 +7,6 @@ import ai.vespa.feed.client.Result;
 import ai.vespa.feed.client.ResultException;
 import ai.vespa.feed.client.ResultParseException;
 import com.fasterxml.jackson.core.JsonParseException;
-import com.vinted.kafka.connect.vespa.VespaReporter;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
@@ -16,7 +15,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.Optional;
@@ -33,7 +31,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-class VespaFeederHandlerTest {
+class IndexingResultHandlerTest {
     private static final DocumentId ID = DocumentId.of("id:ns:dt::1");
 
     private final ErrantRecordReporter reporter = mock(ErrantRecordReporter.class);
@@ -119,9 +117,7 @@ class VespaFeederHandlerTest {
     private CompletableFuture<Result> handle(String behaviorOnMalformedDocs, CompletableFuture<Result> future) {
         VespaSinkConfig config = new VespaSinkConfig(
                 Map.of(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, behaviorOnMalformedDocs));
-        VespaFeederHandler handler = new VespaFeederHandler(
-                LoggerFactory.getLogger(getClass()), config, new VespaReporter(reporter));
-        return handler.handle(record, future);
+        return new IndexingResultHandler(config, reporter).handle(record, future);
     }
 
     private static Result result(Result.Type type) {

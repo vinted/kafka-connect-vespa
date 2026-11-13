@@ -5,47 +5,41 @@ import ai.vespa.feed.client.FeedClient;
 import ai.vespa.feed.client.OperationParameters;
 import ai.vespa.feed.client.Result;
 import com.google.common.base.Strings;
-import com.vinted.kafka.connect.vespa.VespaReporter;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.converters.KeyConverter;
 import com.vinted.kafka.connect.vespa.converters.ValueConverter;
-import org.apache.kafka.connect.errors.DataException;
+import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 public class VespaUpsertFeeder implements VespaFeeder {
-    private static final Logger log = LoggerFactory.getLogger(VespaUpsertFeeder.class);
-
     private final VespaSinkConfig config;
     private final FeedClient client;
     private final OperationParameters parameters;
     private final KeyConverter keyConverter;
     private final ValueConverter valueConverter;
-    private final VespaReporter reporter;
-    private final VespaFeederHandler vespaFeederHandler;
+    private final InvalidMessageHandler invalidMessageHandler;
+    private final IndexingResultHandler indexingResultHandler;
 
-    public VespaUpsertFeeder(FeedClient client, OperationParameters parameters, VespaReporter reporter, VespaSinkConfig config) {
+    public VespaUpsertFeeder(FeedClient client, OperationParameters parameters, ErrantRecordReporter reporter, VespaSinkConfig config) {
         this.config = config;
         this.client = client;
         this.parameters = parameters;
         this.keyConverter = new KeyConverter();
         this.valueConverter = new ValueConverter();
-        this.reporter = reporter;
-        this.vespaFeederHandler = new VespaFeederHandler(log, config, reporter);
+        this.invalidMessageHandler = new InvalidMessageHandler(config, reporter);
+        this.indexingResultHandler = new IndexingResultHandler(config, reporter);
     }
 
     @Override
     public void feed(Collection<SinkRecord> collection) {
         List<CompletableFuture<Result>> operations = collection
                 .stream()
-                .flatMap(this::toOperation)
+                .flatMap(record -> invalidMessageHandler.convert(record, this::toOperation).stream())
                 .collect(Collectors.toMap(x -> x.documentId, x -> x, (existing, replacement) -> replacement))
                 .values()
                 .stream()
@@ -61,29 +55,15 @@ public class VespaUpsertFeeder implements VespaFeeder {
     }
 
     private CompletableFuture<Result> feedSingle(Operation operation) {
-        return vespaFeederHandler.handle(operation.record, operation.feed(client, parameters));
+        return indexingResultHandler.handle(operation.record, operation.feed(client, parameters));
     }
 
-    private Stream<Operation> toOperation(SinkRecord record) {
-        try {
-            String key = keyConverter.convert(record);
-            String value = valueConverter.convert(record);
+    private Operation toOperation(SinkRecord record) {
+        String key = keyConverter.convert(record);
+        String value = valueConverter.convert(record);
 
-            DocumentId documentId = DocumentId.of(getNamespace(record), getDocumentType(record), key);
-            Operation operation = new Operation(record, documentId, value);
-
-            return Stream.of(operation);
-        } catch (DataException exception) {
-            reporter.report(record, exception);
-
-            log.error("Encountered invalid record {}", record, exception);
-
-            if (config.dropInvalidMessage) {
-                return Stream.empty();
-            } else {
-                throw new DataException(exception);
-            }
-        }
+        DocumentId documentId = DocumentId.of(getNamespace(record), getDocumentType(record), key);
+        return new Operation(record, documentId, value);
     }
 
     private String getNamespace(SinkRecord record) {
