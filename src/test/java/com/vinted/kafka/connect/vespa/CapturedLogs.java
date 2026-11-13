@@ -25,7 +25,16 @@ public final class CapturedLogs implements AutoCloseable {
 
     /** Each ERROR entry, with the stack trace of its exception if it has one. */
     public List<String> errors() {
-        return entries().stream().filter(entry -> entry.contains("] ERROR ")).collect(Collectors.toList());
+        return entries("ERROR");
+    }
+
+    /** Each WARN entry, with the stack trace of its exception if it has one. */
+    public List<String> warnings() {
+        return entries("WARN");
+    }
+
+    private List<String> entries(String level) {
+        return entries().stream().filter(entry -> entry.contains("] " + level + " ")).collect(Collectors.toList());
     }
 
     private List<String> entries() {

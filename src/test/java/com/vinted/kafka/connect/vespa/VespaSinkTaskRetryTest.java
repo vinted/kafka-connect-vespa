@@ -77,6 +77,19 @@ class VespaSinkTaskRetryTest {
     }
 
     @Test
+    void logsWhyVespaIsUnavailableWhenRetrying() {
+        client.answerAll(failure(UNAVAILABLE));
+        task.start(params);
+
+        try (CapturedLogs logs = CapturedLogs.capture()) {
+            assertThrows(RetriableException.class, () -> task.put(batch()));
+
+            String warnings = String.join("\n", logs.warnings());
+            assertTrue(warnings.contains("Vespa is unavailable") && warnings.contains("Status 503"), warnings);
+        }
+    }
+
+    @Test
     void failsTheTaskOnceTheRetryBudgetIsExhausted() {
         client.answerAll(failure(UNAVAILABLE));
         task.start(params);
