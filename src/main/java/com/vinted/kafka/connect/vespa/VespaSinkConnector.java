@@ -16,11 +16,12 @@ import java.util.Map;
 
 @Title("Kafka Connect Vespa Sink Connector")
 @Description("The Vespa Sink Connector is used to write data from Kafka to a Vespa search engine.")
-@DocumentationImportant("This connector expects records from Kafka to have a key and value. Values can be converted "
-        + "using byte, string or JSON converters. Topic names are used as document types, use single message "
-        + "transforms to transform topic names into desired document types.")
-@DocumentationNote("This connector supports deletes. If the record stored in Kafka has a null value, this connector "
-        + "will delete document with the corresponding key to Vespa.")
+@DocumentationImportant("Values can be strings or bytes holding JSON, or schema-based data from any converter, such as "
+        + "Avro with Schema Registry, whose converter is bundled. In UPSERT mode the key is the document id and the "
+        + "namespace and document type default to the topic name; in RAW mode each value is a Vespa document "
+        + "operation and the key is not used.")
+@DocumentationNote("In UPSERT mode a record with a null value deletes the document with its key. In RAW mode such "
+        + "records are skipped; send a remove operation instead.")
 public class VespaSinkConnector extends SinkConnector {
     private Map<String, String> props;
 
