@@ -1,6 +1,7 @@
 package com.vinted.kafka.connect.vespa;
 
 import ai.vespa.feed.client.DocumentId;
+import ai.vespa.feed.client.MultiFeedException;
 import ai.vespa.feed.client.OperationParameters;
 import ai.vespa.feed.client.Result;
 import com.google.common.base.Strings;
@@ -20,6 +21,7 @@ import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -120,6 +122,30 @@ public class VespaUpsertSinkTaskTest {
     @Test
     void failsInsteadOfHangingWhenConditionIsNotMet() {
         client.resultType = Result.Type.conditionNotMet;
+
+        task.start(params, client);
+
+        assertTimeoutPreemptively(Duration.ofSeconds(10), () ->
+                assertThrows(ConnectException.class, () -> task.put(List.of(record("set1", "{\"field\":\"value1\"}")))));
+    }
+
+    @Test
+    void keepsTheCauseOfRejectedResults() {
+        client.resultType = Result.Type.conditionNotMet;
+
+        task.start(params, client);
+
+        ConnectException thrown = assertThrows(ConnectException.class,
+                () -> task.put(List.of(record("set1", "{\"field\":\"value1\"}"))));
+        MultiFeedException cause = assertInstanceOf(MultiFeedException.class, thrown.getCause());
+        assertEquals(1, cause.feedExceptions().size());
+    }
+
+    @Test
+    void failsInsteadOfHangingWhenErrantRecordReporterThrows() {
+        client.resultType = Result.Type.conditionNotMet;
+        params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
+        when(reporter.report(any(), any())).thenThrow(new ConnectException("Tolerance exceeded in error handler"));
 
         task.start(params, client);
 

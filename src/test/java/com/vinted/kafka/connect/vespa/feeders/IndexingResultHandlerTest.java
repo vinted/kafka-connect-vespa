@@ -9,6 +9,7 @@ import ai.vespa.feed.client.ResultParseException;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,9 @@ import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.when;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -102,6 +106,29 @@ class IndexingResultHandlerTest {
 
         assertThrows(CompletionException.class, promise::join);
         verify(reporter).report(any(), any());
+    }
+
+    @Test
+    void failsRejectedResultsWithFeedExceptionSoTheCauseSurvivesAwait() {
+        CompletableFuture<Result> promise = handle("FAIL", CompletableFuture.completedFuture(result(Result.Type.conditionNotMet)));
+
+        CompletionException thrown = assertThrows(CompletionException.class, promise::join);
+        FeedException cause = assertInstanceOf(FeedException.class, thrown.getCause());
+        assertEquals(Optional.of(ID), cause.documentId());
+    }
+
+    @Test
+    void failsRecordInsteadOfHangingWhenErrantRecordReporterThrows() {
+        ConnectException toleranceExceeded = new ConnectException("Tolerance exceeded in error handler");
+        when(reporter.report(any(), any())).thenThrow(toleranceExceeded);
+        Throwable failure = new FeedException(ID, "Status 400 executing POST: bad request");
+
+        CompletableFuture<Result> promise = handle("IGNORE", CompletableFuture.failedFuture(failure));
+
+        assertTrue(promise.isDone(), "promise must complete when the reporter throws");
+        CompletionException thrown = assertThrows(CompletionException.class, promise::join);
+        FeedException cause = assertInstanceOf(FeedException.class, thrown.getCause());
+        assertSame(toleranceExceeded, cause.getCause());
     }
 
     @Test

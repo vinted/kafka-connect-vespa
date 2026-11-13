@@ -1,6 +1,7 @@
 package com.vinted.kafka.connect.vespa.feeders;
 
 import ai.vespa.feed.client.DocumentId;
+import ai.vespa.feed.client.FeedException;
 import ai.vespa.feed.client.OperationParseException;
 import ai.vespa.feed.client.Result;
 import com.fasterxml.jackson.core.JsonParseException;
@@ -42,18 +43,26 @@ public class IndexingResultHandler {
         CompletableFuture<Result> promise = new CompletableFuture<>();
 
         future.whenComplete((result, throwable) -> {
-            if (result == null) {
-                if (isMalformed(throwable)) {
-                    skipOrFail(record, throwable, ignoredResult(), promise);
+            try {
+                if (result == null) {
+                    if (isMalformed(throwable)) {
+                        skipOrFail(record, throwable, ignoredResult(), promise);
+                    } else {
+                        log.error(errorMessage(record), throwable);
+                        promise.completeExceptionally(asFeedException(throwable));
+                    }
+                } else if (result.type() == Result.Type.success) {
+                    promise.complete(result);
                 } else {
-                    log.error(errorMessage(record), throwable);
-                    promise.completeExceptionally(throwable);
+                    // Vespa rejected the operation, i.e. its test-and-set condition was not met.
+                    skipOrFail(record, new FeedException(result.documentId(), result.toString()), result, promise);
                 }
-            } else if (result.type() == Result.Type.success) {
-                promise.complete(result);
-            } else {
-                // Vespa rejected the operation, i.e. its test-and-set condition was not met.
-                skipOrFail(record, new Throwable(result.toString()), result, promise);
+            } catch (Throwable t) {
+                // whenComplete swallows anything thrown here, which would leave the promise, and FeedClient.await,
+                // waiting forever. The errant record reporter throws "Tolerance exceeded" under errors.tolerance=none.
+                promise.completeExceptionally(new FeedException(String.format(
+                        "Failed to handle the indexing result of record %s-%d@%d",
+                        record.topic(), record.kafkaPartition(), record.kafkaOffset()), t));
             }
         });
 
@@ -77,8 +86,15 @@ public class IndexingResultHandler {
             case FAIL:
             default:
                 log.error(errorMessage(record), cause);
-                promise.completeExceptionally(cause);
+                promise.completeExceptionally(asFeedException(cause));
         }
+    }
+
+    /**
+     * {@code FeedClient.await} casts every failure to {@link FeedException} and silently drops any that is not one.
+     */
+    private static FeedException asFeedException(Throwable throwable) {
+        return throwable instanceof FeedException ? (FeedException) throwable : new FeedException(throwable);
     }
 
     private static String ignoreMessage(SinkRecord record) {
