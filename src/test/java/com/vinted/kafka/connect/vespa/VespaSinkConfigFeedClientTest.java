@@ -1,9 +1,9 @@
-package com.vinted.kafka.connect.vespa.factories;
+package com.vinted.kafka.connect.vespa;
 
 import ai.vespa.feed.client.FeedClient;
 import ai.vespa.feed.client.FeedClientBuilder;
 import ai.vespa.feed.client.FeedException;
-import com.vinted.kafka.connect.vespa.VespaSinkConfig;
+import ai.vespa.feed.client.impl.GracePeriodCircuitBreaker;
 import com.vinted.kafka.connect.vespa.mocks.MockVespaServer;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.Extension;
@@ -29,6 +29,7 @@ import javax.net.ssl.HostnameVerifier;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.io.Writer;
+import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.math.BigInteger;
 import java.net.URI;
@@ -56,7 +57,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class VespaFeedClientFactoryTest {
+public class VespaSinkConfigFeedClientTest {
     private static final String KEY_STORE_PASSWORD = "changeit";
 
     private final Map<String, String> params = new HashMap<>();
@@ -92,21 +93,57 @@ public class VespaFeedClientFactoryTest {
     @Test
     void configuresClientOptions() {
         params.put("vespa.connection.ttl.ms", "60000");
-        params.put("vespa.compression", "NONE");
+        params.put("vespa.compression", "gzip");
         params.put("vespa.initial.inflight.factor", "8");
         params.put("vespa.benchmark", "false");
-        params.put("vespa.request.headers", "X-Team:search");
+        params.put("vespa.request.headers", "X-Team: search, X-Trace:a:b");
         params.put("vespa.cloud.token", "token123");
 
         RecordingBuilder builder = configure();
 
         assertEquals(List.of(Duration.ofMinutes(1)), builder.args("setConnectionTimeToLive"));
-        assertEquals(List.of(FeedClientBuilder.Compression.none), builder.args("setCompression"));
+        assertEquals(List.of(FeedClientBuilder.Compression.gzip), builder.args("setCompression"));
         assertEquals(List.of(8), builder.args("setInitialInflightFactor"));
         assertTrue(builder.called("noBenchmarking"));
         assertEquals(
-                List.of("X-Team", "search", "Authorization", "Bearer token123"),
+                List.of("X-Team", "search", "X-Trace", "a:b", "Authorization", "Bearer token123"),
                 builder.args("addRequestHeader"));
+    }
+
+    @Test
+    void configuresDefaultRetryStrategy() {
+        FeedClient.RetryStrategy strategy = (FeedClient.RetryStrategy) configure().args("setRetryStrategy").get(0);
+
+        assertEquals(10, strategy.retries());
+        for (FeedClient.OperationType type : FeedClient.OperationType.values()) {
+            assertTrue(strategy.retry(type), type.name());
+        }
+    }
+
+    @Test
+    void configuresRetryStrategy() {
+        params.put("vespa.retry.strategy.retries", "20");
+        params.put("vespa.retry.strategy.operation.types", "UPDATE,REMOVE");
+
+        FeedClient.RetryStrategy strategy = (FeedClient.RetryStrategy) configure().args("setRetryStrategy").get(0);
+
+        assertEquals(20, strategy.retries());
+        assertFalse(strategy.retry(FeedClient.OperationType.PUT));
+        assertTrue(strategy.retry(FeedClient.OperationType.UPDATE));
+        assertTrue(strategy.retry(FeedClient.OperationType.REMOVE));
+    }
+
+    @Test
+    void configuresCircuitBreaker() throws Exception {
+        Object defaults = configure().args("setCircuitBreaker").get(0);
+        params.put("vespa.circuit.breaker.grace.period.ms", "5000");
+        params.put("vespa.max.failure.ms", "20000");
+        Object configured = configure().args("setCircuitBreaker").get(0);
+
+        assertEquals(Duration.ofSeconds(10), breakerPeriod(defaults, "graceNanos"));
+        assertEquals(Duration.ofMinutes(1), breakerPeriod(defaults, "doomNanos"));
+        assertEquals(Duration.ofSeconds(5), breakerPeriod(configured, "graceNanos"));
+        assertEquals(Duration.ofSeconds(20), breakerPeriod(configured, "doomNanos"));
     }
 
     @Test
@@ -149,7 +186,7 @@ public class VespaFeedClientFactoryTest {
         params.put("vespa.ssl.private.key.path", writePem("client.key", client.keyPair.getPrivate()).toString());
         params.put("vespa.ssl.ca.certificates.path", writePem("ca.pem", server.certificate).toString());
 
-        FeedClient feedClient = VespaFeedClientFactory.create(new VespaSinkConfig(params));
+        FeedClient feedClient = new VespaSinkConfig(params).feedClient();
         feedClient.close();
 
         assertEquals(List.of(client.certificate), presentedClientCertificates);
@@ -161,7 +198,7 @@ public class VespaFeedClientFactoryTest {
         params.put("vespa.endpoint", httpsServer.url());
         params.put("vespa.ssl.ca.certificates.path", writePem("ca.pem", server.certificate).toString());
 
-        assertThrows(FeedException.class, () -> VespaFeedClientFactory.create(new VespaSinkConfig(params)));
+        assertThrows(FeedException.class, () -> new VespaSinkConfig(params).feedClient());
         assertTrue(presentedClientCertificates.isEmpty());
     }
 
@@ -171,7 +208,7 @@ public class VespaFeedClientFactoryTest {
         params.put("vespa.ssl.certificate.path", tempDir.resolve("missing.pem").toString());
         params.put("vespa.ssl.private.key.path", tempDir.resolve("missing.key").toString());
 
-        assertThrows(UncheckedIOException.class, () -> VespaFeedClientFactory.create(new VespaSinkConfig(params)));
+        assertThrows(UncheckedIOException.class, () -> new VespaSinkConfig(params).feedClient());
     }
 
     @AfterEach
@@ -183,8 +220,15 @@ public class VespaFeedClientFactoryTest {
 
     private RecordingBuilder configure() {
         RecordingBuilder recorder = new RecordingBuilder();
-        VespaFeedClientFactory.configure(recorder.builder, new VespaSinkConfig(params));
+        new VespaSinkConfig(params).configure(recorder.builder);
         return recorder;
+    }
+
+    // GracePeriodCircuitBreaker exposes neither period.
+    private static Duration breakerPeriod(Object breaker, String field) throws Exception {
+        Field nanos = GracePeriodCircuitBreaker.class.getDeclaredField(field);
+        nanos.setAccessible(true);
+        return Duration.ofNanos(nanos.getLong(breaker));
     }
 
     private void startMutualTlsServer() throws Exception {

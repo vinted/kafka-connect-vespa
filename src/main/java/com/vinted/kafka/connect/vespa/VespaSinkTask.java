@@ -2,7 +2,6 @@ package com.vinted.kafka.connect.vespa;
 
 import ai.vespa.feed.client.FeedClient;
 import com.github.jcustenborder.kafka.connect.utils.VersionUtil;
-import com.vinted.kafka.connect.vespa.factories.VespaFeedClientFactory;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeed;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeedException;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -22,12 +21,11 @@ public class VespaSinkTask extends SinkTask {
     private static final Logger log = LoggerFactory.getLogger(VespaSinkTask.class);
 
     private final Function<VespaSinkConfig, FeedClient> clients;
-    private VespaSinkConfig config;
     private VespaFeed feed;
     private RetryBudget retryBudget;
 
     public VespaSinkTask() {
-        this(VespaFeedClientFactory::create);
+        this(VespaSinkConfig::feedClient);
     }
 
     VespaSinkTask(Function<VespaSinkConfig, FeedClient> clients) {
@@ -39,9 +37,9 @@ public class VespaSinkTask extends SinkTask {
         log.info("Starting Vespa Sink Task.");
 
         ErrantRecordReporter reporter = errantRecordReporter();
-        this.config = new VespaSinkConfig(props);
-        this.retryBudget = new RetryBudget(config.maxRetries, config.retryBackoffMs);
-        log.info("Using {} operational mode.", config.operationalMode);
+        VespaSinkConfig config = new VespaSinkConfig(props);
+        this.retryBudget = config.retryBudget();
+        log.info("Using {} operational mode.", config.operationalMode());
 
         this.feed = VespaFeed.open(config, retryBudget.reportingOnce(reporter), clients);
     }
@@ -87,12 +85,12 @@ public class VespaSinkTask extends SinkTask {
         switch (decision.outcome) {
             case RETRY:
                 log.warn("Vespa is unavailable, retrying {} records in {} ms (retry {} of {}).",
-                        records, decision.backoffMs, decision.attempt, config.maxRetries, e.getCause());
+                        records, decision.backoffMs, decision.attempt, retryBudget.maxRetries(), e.getCause());
                 context.timeout(decision.backoffMs);
                 return new RetriableException(e.getCause());
             case EXHAUSTED:
                 log.error("Vespa is still unavailable after {} retries. To wait longer, increase '{}' or '{}'.",
-                        config.maxRetries, VespaSinkConfig.MAX_RETRIES_CONFIG, VespaSinkConfig.RETRY_BACKOFF_MS_CONFIG,
+                        retryBudget.maxRetries(), VespaSinkConfig.MAX_RETRIES_CONFIG, VespaSinkConfig.RETRY_BACKOFF_MS_CONFIG,
                         e.getCause());
                 return e;
             case NOT_TRANSIENT:

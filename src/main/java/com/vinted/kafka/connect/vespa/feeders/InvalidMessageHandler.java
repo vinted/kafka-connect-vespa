@@ -25,7 +25,7 @@ public class InvalidMessageHandler {
      * @param reporter the errant record reporter, or {@code null} when none is configured
      */
     public InvalidMessageHandler(VespaSinkConfig config, ErrantRecordReporter reporter) {
-        this.dropInvalidMessage = config.dropInvalidMessage;
+        this.dropInvalidMessage = config.dropInvalidMessage();
         this.reporter = reporter;
     }
 

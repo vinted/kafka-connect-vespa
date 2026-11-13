@@ -51,7 +51,7 @@ class FeedSessionTest {
                 VespaSinkConfig.OPERATION_TRACELEVEL_CONFIG, "3",
                 VespaSinkConfig.OPERATION_CONDITION_CONFIG, "dt.locked == false",
                 VespaSinkConfig.OPERATION_CREATE_IF_NON_EXISTENT_CONFIG, "true"));
-        FeedSession session = new FeedSession(client, RecordTranslator.commonParameters(config));
+        FeedSession session = new FeedSession(client, config.operationParameters());
 
         session.feed(DOCUMENT_JSON).join();
 

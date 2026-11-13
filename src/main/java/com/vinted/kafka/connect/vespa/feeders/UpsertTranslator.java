@@ -2,7 +2,6 @@ package com.vinted.kafka.connect.vespa.feeders;
 
 import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.OperationParameters;
-import com.google.common.base.Strings;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentOperation;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.Put;
@@ -20,23 +19,22 @@ import java.util.Optional;
  * is put as the document's fields; a tombstone removes the document, and an empty value is an invalid message.
  */
 final class UpsertTranslator implements RecordTranslator<DocumentOperation> {
-    private final String namespace;
-    private final String documentType;
+    private final VespaSinkConfig config;
     private final OperationParameters putParameters;
     private final OperationParameters removeParameters;
 
     UpsertTranslator(VespaSinkConfig config) {
-        this.namespace = config.namespace;
-        this.documentType = config.documentType;
-        this.removeParameters = conditional(RecordTranslator.commonParameters(config), config.condition);
-        this.putParameters = removeParameters.createIfNonExistent(config.createIfNonExistent);
+        this.config = config;
+        this.putParameters = config.putParameters();
+        this.removeParameters = config.removeParameters();
     }
 
     @Override
     public Optional<DocumentOperation> translate(SinkRecord record) {
         String key = KeyConverter.convert(record);
         String value = ValueConverter.convert(record);
-        DocumentId documentId = DocumentId.of(orTopic(namespace, record), orTopic(documentType, record), key);
+        String topic = record.topic();
+        DocumentId documentId = DocumentId.of(config.namespace(topic), config.documentType(topic), key);
 
         if (value == null) {
             return Optional.of(new Remove(record, documentId, removeParameters));
@@ -55,13 +53,5 @@ final class UpsertTranslator implements RecordTranslator<DocumentOperation> {
         Map<DocumentId, DocumentOperation> latest = new LinkedHashMap<>();
         operations.forEach(operation -> latest.put(operation.documentId, operation));
         return List.copyOf(latest.values());
-    }
-
-    private static OperationParameters conditional(OperationParameters parameters, String condition) {
-        return Strings.isNullOrEmpty(condition) ? parameters : parameters.testAndSetCondition(condition);
-    }
-
-    private static String orTopic(String configured, SinkRecord record) {
-        return configured == null ? record.topic() : configured;
     }
 }

@@ -90,7 +90,7 @@ public class VespaFeed implements Closeable {
             session = null;
         }
 
-        session = new FeedSession(clients.apply(config), RecordTranslator.commonParameters(config));
+        session = new FeedSession(clients.apply(config), config.operationParameters());
         return session;
     }
 

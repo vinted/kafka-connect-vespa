@@ -27,7 +27,7 @@ public class IndexingResultHandler {
      * @param reporter the errant record reporter, or {@code null} when none is configured
      */
     public IndexingResultHandler(VespaSinkConfig config, ErrantRecordReporter reporter) {
-        this.behaviorOnMalformedDoc = config.behaviorOnMalformedDoc;
+        this.behaviorOnMalformedDoc = config.behaviorOnMalformedDoc();
         this.reporter = reporter;
     }
 
