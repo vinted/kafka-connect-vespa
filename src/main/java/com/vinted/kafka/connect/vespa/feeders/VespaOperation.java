@@ -15,7 +15,7 @@ abstract class VespaOperation {
         this.record = record;
     }
 
-    abstract CompletableFuture<Result> submit(FeedSession session);
+    abstract CompletableFuture<Result> submit(FeedSession.Client client);
 
     /** An operation on a document whose id the connector built. */
     abstract static class DocumentOperation extends VespaOperation {
@@ -38,8 +38,8 @@ abstract class VespaOperation {
         }
 
         @Override
-        CompletableFuture<Result> submit(FeedSession session) {
-            return session.put(documentId, documentJson, parameters);
+        CompletableFuture<Result> submit(FeedSession.Client client) {
+            return client.put(documentId, documentJson, parameters);
         }
     }
 
@@ -49,8 +49,8 @@ abstract class VespaOperation {
         }
 
         @Override
-        CompletableFuture<Result> submit(FeedSession session) {
-            return session.remove(documentId, parameters);
+        CompletableFuture<Result> submit(FeedSession.Client client) {
+            return client.remove(documentId, parameters);
         }
     }
 
@@ -64,8 +64,8 @@ abstract class VespaOperation {
         }
 
         @Override
-        CompletableFuture<Result> submit(FeedSession session) {
-            return session.feed(json);
+        CompletableFuture<Result> submit(FeedSession.Client client) {
+            return client.feed(json);
         }
     }
 }
