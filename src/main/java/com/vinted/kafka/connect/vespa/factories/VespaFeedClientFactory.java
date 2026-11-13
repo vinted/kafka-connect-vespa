@@ -15,7 +15,6 @@ public class VespaFeedClientFactory {
         return configure(FeedClientBuilder.create(ImmutableList.copyOf(config.urls)), config).build();
     }
 
-    // Builder methods are not chained: some implementations return null instead of the builder.
     static FeedClientBuilder configure(FeedClientBuilder builder, VespaSinkConfig config) {
         builder.setConnectionsPerEndpoint(config.connectionsPerEndpoint);
         builder.setMaxStreamPerConnection(config.maxStreamsPerConnection);

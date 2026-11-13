@@ -193,7 +193,6 @@ public class VespaFeedClientFactoryTest {
         return recorder;
     }
 
-    /** Starts an HTTPS server that only accepts clients presenting {@link #client}'s certificate. */
     private void startMutualTlsServer() throws Exception {
         server = Identity.create("localhost");
         client = Identity.create("kafka-connect-vespa");
@@ -251,7 +250,6 @@ public class VespaFeedClientFactoryTest {
         return path;
     }
 
-    /** A self-signed certificate for {@code hostname} and its key pair. */
     private static final class Identity {
         final KeyPair keyPair;
         final X509Certificate certificate;
@@ -283,7 +281,6 @@ public class VespaFeedClientFactoryTest {
         }
     }
 
-    /** Records every builder invocation; a dynamic proxy keeps it independent of the builder's method set. */
     private static class RecordingBuilder {
         private final List<Object[]> calls = new ArrayList<>();
         final FeedClientBuilder builder = (FeedClientBuilder) Proxy.newProxyInstance(
