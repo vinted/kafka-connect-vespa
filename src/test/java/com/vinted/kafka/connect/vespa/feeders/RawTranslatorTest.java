@@ -1,19 +1,22 @@
 package com.vinted.kafka.connect.vespa.feeders;
 
+import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentJson;
 import org.apache.kafka.connect.data.Schema;
-import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RawTranslatorTest {
     private static final String UPDATE = "{\"update\":\"id:ns:dt::a\",\"fields\":{\"n\":{\"increment\":1}}}";
@@ -24,42 +27,45 @@ class RawTranslatorTest {
     void feedsTheValueAsADocumentJsonOperation() {
         SinkRecord record = record(UPDATE);
 
-        DocumentJson operation = translator().translate(record).orElseThrow();
+        List<DocumentJson> operations = translator().operations(List.of(record));
 
-        assertSame(record, operation.record);
-        assertEquals(UPDATE, operation.json);
+        assertEquals(1, operations.size());
+        assertSame(record, operations.get(0).record);
+        assertEquals(UPDATE, operations.get(0).json);
     }
 
     @Test
     void skipsTombstones() {
-        assertEquals(Optional.empty(), translator().translate(record(null)));
+        assertEquals(List.of(), translator().operations(List.of(record(null))));
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"", " \n\t "})
     void rejectsAnEmptyValueAsAnInvalidMessage(String value) {
-        assertThrows(DataException.class, () -> translator().translate(record(value)));
+        assertInvalidMessage(record(value));
     }
 
     @Test
     void rejectsAValueTheConverterCannotConvertAsAnInvalidMessage() {
-        SinkRecord record = new SinkRecord("topic", 0, null, null, Schema.STRING_SCHEMA, 42, offset++);
-
-        assertThrows(DataException.class, () -> translator().translate(record));
+        assertInvalidMessage(new SinkRecord("topic", 0, null, null, Schema.STRING_SCHEMA, 42, offset++));
     }
 
     @Test
     void keepsEveryOperationInOrder() {
-        RawTranslator translator = translator();
-        List<DocumentJson> operations = List.of(
-                translator.translate(record(UPDATE)).orElseThrow(),
-                translator.translate(record(UPDATE)).orElseThrow());
+        List<SinkRecord> records = List.of(record(UPDATE), record(UPDATE));
 
-        assertEquals(operations, translator.compact(operations));
+        List<DocumentJson> operations = translator().operations(records);
+
+        assertEquals(records, operations.stream().map(operation -> operation.record).collect(Collectors.toList()));
+    }
+
+    private void assertInvalidMessage(SinkRecord record) {
+        VespaFeedException thrown = assertThrows(VespaFeedException.class, () -> translator().operations(List.of(record)));
+        assertTrue(thrown.getMessage().startsWith("invalid message: "), thrown.getMessage());
     }
 
     private RawTranslator translator() {
-        return new RawTranslator();
+        return new RawTranslator(new VespaSinkConfig(Map.of()), (record, error) -> CompletableFuture.completedFuture(null));
     }
 
     private SinkRecord record(String value) {

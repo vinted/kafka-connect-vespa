@@ -7,7 +7,6 @@ import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentOperation;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.Put;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.Remove;
 import org.apache.kafka.connect.data.Schema;
-import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -18,12 +17,15 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class UpsertTranslatorTest {
     private static final OperationParameters DEFAULT_PARAMETERS = OperationParameters.empty().timeout(Duration.ofMinutes(1));
@@ -93,15 +95,13 @@ class UpsertTranslatorTest {
 
     @Test
     void rejectsARecordWithoutKeyAsAnInvalidMessage() {
-        assertThrows(DataException.class, () -> translator().translate(record(null, "{}")));
+        assertInvalidMessage(record(null, "{}"));
     }
 
     @ParameterizedTest
     @MethodSource("emptyValues")
     void rejectsAnEmptyValueAsAnInvalidMessageRatherThanRemoving(Object value) {
-        SinkRecord record = new SinkRecord("topic", 0, Schema.STRING_SCHEMA, "key", null, value, offset++);
-
-        assertThrows(DataException.class, () -> translator().translate(record));
+        assertInvalidMessage(new SinkRecord("topic", 0, Schema.STRING_SCHEMA, "key", null, value, offset++));
     }
 
     static Stream<Object> emptyValues() {
@@ -110,21 +110,28 @@ class UpsertTranslatorTest {
 
     @Test
     void keepsOnlyTheLastOperationPerDocument() {
-        UpsertTranslator translator = translator();
-        DocumentOperation first = translator.translate(record("a", "{\"v\":1}")).orElseThrow();
-        DocumentOperation other = translator.translate(record("b", "{}")).orElseThrow();
-        DocumentOperation removed = translator.translate(record("a", null)).orElseThrow();
-        DocumentOperation last = translator.translate(record("a", "{\"v\":2}")).orElseThrow();
+        SinkRecord other = record("b", "{}");
+        SinkRecord last = record("a", "{\"v\":2}");
 
-        assertEquals(List.of(last, other), translator.compact(List.of(first, other, removed, last)));
+        List<DocumentOperation> operations = translator().operations(
+                List.of(record("a", "{\"v\":1}"), other, record("a", null), last));
+
+        assertEquals(List.of(last, other), operations.stream().map(operation -> operation.record).collect(Collectors.toList()));
+    }
+
+    private void assertInvalidMessage(SinkRecord record) {
+        VespaFeedException thrown = assertThrows(VespaFeedException.class, () -> translator().operations(List.of(record)));
+        assertTrue(thrown.getMessage().startsWith("invalid message: "), thrown.getMessage());
     }
 
     private DocumentOperation translate(SinkRecord record) {
-        return translator().translate(record).orElseThrow();
+        List<DocumentOperation> operations = translator().operations(List.of(record));
+        assertEquals(1, operations.size());
+        return operations.get(0);
     }
 
     private UpsertTranslator translator() {
-        return new UpsertTranslator(new VespaSinkConfig(params));
+        return new UpsertTranslator(new VespaSinkConfig(params), (record, error) -> CompletableFuture.completedFuture(null));
     }
 
     private SinkRecord record(String key, String value) {

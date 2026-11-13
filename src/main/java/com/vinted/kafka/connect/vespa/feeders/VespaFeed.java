@@ -4,7 +4,6 @@ import ai.vespa.feed.client.FeedClient;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Failure;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Kind;
-import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
@@ -25,15 +24,13 @@ public class VespaFeed implements Closeable {
 
     private final VespaSinkConfig config;
     private final RecordTranslator<?> translator;
-    private final InvalidMessageHandler invalidMessageHandler;
     private final IndexingResultHandler indexingResultHandler;
     private final Function<VespaSinkConfig, FeedClient> clients;
     private FeedSession session;
 
     private VespaFeed(VespaSinkConfig config, ErrantRecordReporter reporter, Function<VespaSinkConfig, FeedClient> clients) {
         this.config = config;
-        this.translator = RecordTranslator.of(config);
-        this.invalidMessageHandler = new InvalidMessageHandler(config, reporter);
+        this.translator = RecordTranslator.of(config, reporter);
         this.indexingResultHandler = new IndexingResultHandler(config, reporter);
         this.clients = clients;
     }
@@ -56,7 +53,7 @@ public class VespaFeed implements Closeable {
     }
 
     public void feed(Collection<SinkRecord> records) {
-        List<? extends VespaOperation> operations = translate(records);
+        List<? extends VespaOperation> operations = translator.operations(records);
         List<Failure> failures = submit(operations).stream()
                 .map(CompletableFuture::join)
                 .flatMap(Optional::stream)
@@ -104,24 +101,6 @@ public class VespaFeed implements Closeable {
 
         session = new FeedSession(clients.apply(config), config.operationParameters());
         return session;
-    }
-
-    private List<? extends VespaOperation> translate(Collection<SinkRecord> records) {
-        try {
-            return translate(translator, records);
-        } catch (DataException e) {
-            throw new VespaFeedException(Kind.INVALID_MESSAGE, e);
-        }
-    }
-
-    private <T extends VespaOperation> List<T> translate(RecordTranslator<T> translator, Collection<SinkRecord> records) {
-        List<T> operations = records.stream()
-                .flatMap(record -> invalidMessageHandler.convert(record, translator::translate)
-                        .flatMap(Function.identity())
-                        .stream())
-                .collect(Collectors.toList());
-
-        return translator.compact(operations);
     }
 
     private static void closeQuietly(FeedSession session) {
