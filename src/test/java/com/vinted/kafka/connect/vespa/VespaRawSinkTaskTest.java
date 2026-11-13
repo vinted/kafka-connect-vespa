@@ -1,5 +1,7 @@
 package com.vinted.kafka.connect.vespa;
 
+import ai.vespa.feed.client.DocumentId;
+import ai.vespa.feed.client.OperationParameters;
 import com.google.common.base.Strings;
 import com.vinted.kafka.connect.vespa.mocks.MockVespaFeedClient;
 import org.apache.kafka.connect.data.Schema;
@@ -12,8 +14,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.*;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -110,6 +114,23 @@ public class VespaRawSinkTaskTest {
         client.assertAllDocumentIds(
                 "id:test_namespace:test_document_type::set2"
         );
+    }
+
+    @Test
+    void appliesTheConditionOfTheOperationRatherThanTheConfiguredOne() {
+        params.put(VespaSinkConfig.OPERATION_CONDITION_CONFIG, "test_document_type.locked == false");
+        restart();
+
+        task.put(Arrays.asList(
+                record("set1", "{\"put\":\"id:test_namespace:test_document_type::set1\",\"fields\":{}}"),
+                record("set2", "{\"put\":\"id:test_namespace:test_document_type::set2\",\"condition\":\"test_document_type.n > 1\",\"fields\":{}}")
+        ));
+
+        OperationParameters unconditional = client.parameters.get(DocumentId.of("id:test_namespace:test_document_type::set1"));
+        OperationParameters conditional = client.parameters.get(DocumentId.of("id:test_namespace:test_document_type::set2"));
+        assertEquals(Optional.empty(), unconditional.testAndSetCondition());
+        assertEquals(Optional.of("test_document_type.n > 1"), conditional.testAndSetCondition());
+        assertEquals(Optional.of(Duration.ofMinutes(1)), conditional.timeout());
     }
 
     @Test

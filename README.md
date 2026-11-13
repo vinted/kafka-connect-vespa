@@ -30,11 +30,17 @@ the namespace and the document type, but they can be overriden using the `vespa.
 configuration properties. If you need something more complex, consider using single message transforms to change the
 topic name.
 
+Within a batch, only the last record for each document is sent to Vespa. `vespa.operation.condition` applies to puts and
+removes, and `vespa.operation.create.if.non.existent` only to puts.
+
 #### RAW
 
 Raw mode will execute kafka messages as vespa document api operations using document JSON format. If you want those
 operations to be executed in order, make sure they have a unique kafka key so that the operations are sent to the same
-kafka partitions. In this mode, connector does not use the kafka keys at all.
+kafka partitions. In this mode, connector does not use the kafka keys at all. Every operation is sent, in order, since an
+update can depend on an earlier operation on the same document. Each operation carries its own id, `condition` and `create`,
+so `vespa.namespace`, `vespa.document.type`, `vespa.operation.condition` and `vespa.operation.create.if.non.existent` are
+ignored.
 
 Tombstones carry no operation and, without the kafka key, no document id, so they are skipped. To delete documents, send
 a `remove` operation.
