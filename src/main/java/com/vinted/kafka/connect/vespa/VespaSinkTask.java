@@ -41,7 +41,7 @@ public class VespaSinkTask extends SinkTask {
         this.retryBudget = config.retryBudget(context::timeout);
         log.info("Using {} operational mode.", config.operationalMode());
 
-        this.feed = VespaFeed.open(config, retryBudget.reportingOnce(reporter), clients);
+        this.feed = VespaFeed.open(config, retryBudget.reportingOnce(reporter), () -> clients.apply(config));
     }
 
     private ErrantRecordReporter errantRecordReporter() {
