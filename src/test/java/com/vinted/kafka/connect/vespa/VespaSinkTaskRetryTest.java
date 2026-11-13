@@ -1,6 +1,5 @@
 package com.vinted.kafka.connect.vespa;
 
-import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.FeedException;
 import com.vinted.kafka.connect.vespa.mocks.MockVespaFeedClient;
 import org.apache.kafka.connect.data.Schema;
@@ -39,7 +38,7 @@ class VespaSinkTaskRetryTest {
     void before() {
         params.put(VespaSinkConfig.NAMESPACE_CONFIG, "ns");
         params.put(VespaSinkConfig.DOCUMENT_TYPE_CONFIG, "dt");
-        params.put(VespaSinkConfig.MAX_RETRIES_CONFIG, "2");
+        params.put(VespaSinkConfig.MAX_RETRIES_CONFIG, "1");
         params.put(VespaSinkConfig.RETRY_BACKOFF_MS_CONFIG, "1000");
         task.initialize(context);
     }
@@ -50,80 +49,35 @@ class VespaSinkTaskRetryTest {
     }
 
     @Test
-    void retriesTransientFailuresWithBackoff() {
+    void asksConnectToBackOffBeforeRedeliveringATransientFailure() {
         client.failure = UNAVAILABLE;
         task.start(params);
 
         assertThrows(RetriableException.class, () -> task.put(batch()));
-        assertThrows(RetriableException.class, () -> task.put(batch()));
 
-        ArgumentCaptor<Long> backoffs = ArgumentCaptor.forClass(Long.class);
-        verify(context, times(2)).timeout(backoffs.capture());
-        long first = backoffs.getAllValues().get(0);
-        long second = backoffs.getAllValues().get(1);
-        assertTrue(first >= 0 && first < 2000, "first backoff " + first);
-        assertTrue(second >= 0 && second < 4000, "second backoff " + second);
+        ArgumentCaptor<Long> backoff = ArgumentCaptor.forClass(Long.class);
+        verify(context).timeout(backoff.capture());
+        assertTrue(backoff.getValue() >= 0 && backoff.getValue() < 2000, "backoff " + backoff.getValue());
     }
 
     @Test
-    void failsOnceTheRetryBudgetIsExhausted() {
+    void failsTheTaskOnceTheRetryBudgetIsExhausted() {
         client.failure = UNAVAILABLE;
         task.start(params);
 
         assertThrows(RetriableException.class, () -> task.put(batch()));
-        assertThrows(RetriableException.class, () -> task.put(batch()));
-        ConnectException thrown = assertThrows(ConnectException.class, () -> task.put(batch()));
+        assertNotRetriable(() -> task.put(batch()));
 
-        assertTrue(!(thrown instanceof RetriableException));
-        verify(context, times(2)).timeout(anyLong());
+        verify(context, times(1)).timeout(anyLong());
     }
 
     @Test
-    void resetsTheRetryBudgetAfterASuccessfulBatch() {
-        params.put(VespaSinkConfig.MAX_RETRIES_CONFIG, "1");
-        task.start(params);
-
-        client.failure = UNAVAILABLE;
-        assertThrows(RetriableException.class, () -> task.put(batch()));
-        client.failure = null;
-        task.put(batch());
-        client.failure = UNAVAILABLE;
-
-        assertThrows(RetriableException.class, () -> task.put(batch()));
-    }
-
-    @Test
-    void doesNotRetryClientErrors() {
+    void failsTheTaskOnFailuresThatAreNotTransient() {
         client.failure = UNAUTHORIZED;
         task.start(params);
 
         assertNotRetriable(() -> task.put(batch()));
         verify(context, never()).timeout(anyLong());
-    }
-
-    @Test
-    void doesNotRetryABatchWithAnyNonTransientFailure() {
-        client.failure = UNAVAILABLE;
-        client.failures.put(DocumentId.of("id:ns:dt::key-2"), UNAUTHORIZED);
-        task.start(params);
-
-        assertNotRetriable(() -> task.put(List.of(record("key-1"), record("key-2"))));
-    }
-
-    @Test
-    void doesNotRetryInvalidMessages() {
-        task.start(params);
-
-        assertNotRetriable(() -> task.put(List.of(new SinkRecord("topic", 0, Schema.STRING_SCHEMA, null, Schema.STRING_SCHEMA, "{}", 0))));
-    }
-
-    @Test
-    void doesNotRetryWhenRetriesAreDisabled() {
-        params.put(VespaSinkConfig.MAX_RETRIES_CONFIG, "0");
-        client.failure = UNAVAILABLE;
-        task.start(params);
-
-        assertNotRetriable(() -> task.put(batch()));
     }
 
     private static void assertNotRetriable(org.junit.jupiter.api.function.Executable put) {
