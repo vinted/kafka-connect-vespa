@@ -39,6 +39,10 @@ kafka partitions. In this mode, connector does not use the kafka keys at all.
 Tombstones carry no operation and, without the kafka key, no document id, so they are skipped. To delete documents, send
 a `remove` operation.
 
+A value the connector cannot convert to JSON is an invalid message, handled according to `vespa.drop.invalid.message`
+as in UPSERT mode. A value that converts but is not a valid document JSON operation is a malformed document, handled
+according to `vespa.behavior.on.malformed.documents`.
+
 ### Data formats
 
 Records are deserialized by the converters configured on the worker or the connector (`key.converter`,

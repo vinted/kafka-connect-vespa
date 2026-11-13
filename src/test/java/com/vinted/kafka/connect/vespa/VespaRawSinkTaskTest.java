@@ -3,6 +3,8 @@ package com.vinted.kafka.connect.vespa;
 import com.google.common.base.Strings;
 import com.vinted.kafka.connect.vespa.mocks.MockVespaFeedClient;
 import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.errors.ConnectException;
+import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTaskContext;
@@ -12,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.*;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -107,6 +110,39 @@ public class VespaRawSinkTaskTest {
         client.assertAllDocumentIds(
                 "id:test_namespace:test_document_type::set2"
         );
+    }
+
+    @Test
+    void reportsAndDropsInvalidMessagesWhenConfigured() {
+        params.put(VespaSinkConfig.DROP_INVALID_MESSAGE_CONFIG, "true");
+        restart();
+        SinkRecord invalid = unconvertible();
+
+        task.put(Arrays.asList(invalid, record("set1", "{\"put\":\"id:test_namespace:test_document_type::set1\",\"fields\":{}}")));
+
+        verify(reporter).report(eq(invalid), any(DataException.class));
+        client.assertAllDocumentIds("id:test_namespace:test_document_type::set1");
+    }
+
+    @Test
+    void reportsAndFailsOnInvalidMessagesBeforeSendingAnyOperation() {
+        SinkRecord invalid = unconvertible();
+        List<SinkRecord> records = Arrays.asList(
+                record("set1", "{\"put\":\"id:test_namespace:test_document_type::set1\",\"fields\":{}}"), invalid);
+
+        assertThrows(ConnectException.class, () -> task.put(records));
+
+        verify(reporter).report(eq(invalid), any(DataException.class));
+        client.assertAllDocumentIds();
+    }
+
+    private void restart() {
+        task.stop();
+        task.start(params);
+    }
+
+    private SinkRecord unconvertible() {
+        return new SinkRecord("topic", 1, Schema.STRING_SCHEMA, "key", Schema.STRING_SCHEMA, 42, offset++);
     }
 
     private SinkRecord record(String key, String value) {

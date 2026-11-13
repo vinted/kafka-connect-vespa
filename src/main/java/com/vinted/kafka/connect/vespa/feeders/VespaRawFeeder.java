@@ -22,6 +22,7 @@ class VespaRawFeeder implements VespaFeeder {
 
     private final JsonFeeder feeder;
     private final ValueConverter valueConverter;
+    private final InvalidMessageHandler invalidMessageHandler;
     private final IndexingResultHandler indexingResultHandler;
 
     VespaRawFeeder(FeedClient client, OperationParameters parameters, ErrantRecordReporter reporter, VespaSinkConfig config) {
@@ -33,12 +34,18 @@ class VespaRawFeeder implements VespaFeeder {
 
         this.feeder = builder.build();
         this.valueConverter = new ValueConverter();
+        this.invalidMessageHandler = new InvalidMessageHandler(config, reporter);
         this.indexingResultHandler = new IndexingResultHandler(config, reporter);
     }
 
     @Override
     public List<CompletableFuture<Result>> feed(Collection<SinkRecord> records) {
-        return records.stream().filter(this::isOperation).map(this::feedSingle).collect(Collectors.toList());
+        List<Operation> operations = records.stream()
+                .filter(this::isOperation)
+                .flatMap(record -> invalidMessageHandler.convert(record, this::toOperation).stream())
+                .collect(Collectors.toList());
+
+        return operations.stream().map(this::feedSingle).collect(Collectors.toList());
     }
 
     @Override
@@ -55,7 +62,21 @@ class VespaRawFeeder implements VespaFeeder {
         return false;
     }
 
-    private CompletableFuture<Result> feedSingle(SinkRecord record) {
-        return indexingResultHandler.handle(record, feeder.feedSingle(valueConverter.convert(record)));
+    private Operation toOperation(SinkRecord record) {
+        return new Operation(record, valueConverter.convert(record));
+    }
+
+    private CompletableFuture<Result> feedSingle(Operation operation) {
+        return indexingResultHandler.handle(operation.record, feeder.feedSingle(operation.json));
+    }
+
+    private static class Operation {
+        private final SinkRecord record;
+        private final String json;
+
+        Operation(SinkRecord record, String json) {
+            this.record = record;
+            this.json = json;
+        }
     }
 }
