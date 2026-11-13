@@ -1,0 +1,16 @@
+{
+  "config": {
+    "name": "VespaSinkConnectorMtls",
+    "connector.class": "com.vinted.kafka.connect.vespa.VespaSinkConnector",
+    "tasks.max": "1",
+    "topics": "music",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "vespa.endpoint": "https://vespa:8443/",
+    "vespa.namespace": "default",
+    "vespa.document.type": "music",
+    "vespa.ssl.certificate.path": "/etc/kafka-connect/vespa/client.pem",
+    "vespa.ssl.private.key.path": "/etc/kafka-connect/vespa/client.key",
+    "vespa.ssl.ca.certificates.path": "/etc/kafka-connect/vespa/ca.pem"
+  }
+}

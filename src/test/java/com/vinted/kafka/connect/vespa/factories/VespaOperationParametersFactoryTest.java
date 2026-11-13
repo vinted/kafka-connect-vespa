@@ -38,4 +38,20 @@ public class VespaOperationParametersFactoryTest {
 
         assertEquals(expected, subject);
     }
+
+    @Test
+    void setsConditionAndCreateIfNonExistent() {
+        params.put("vespa.operation.condition", "music.locked == false");
+        params.put("vespa.operation.create.if.non.existent", "true");
+
+        OperationParameters subject = VespaOperationParametersFactory.create(new VespaSinkConfig(params));
+
+        OperationParameters expected = OperationParameters
+                .empty()
+                .timeout(Duration.ofMinutes(1))
+                .testAndSetCondition("music.locked == false")
+                .createIfNonExistent(true);
+
+        assertEquals(expected, subject);
+    }
 }

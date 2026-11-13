@@ -14,11 +14,14 @@ public class MockVespaFeedClient implements FeedClient {
     final Map<DocumentId, String> putOperations = new LinkedHashMap<>();
     final Map<DocumentId, String> updateOperations = new LinkedHashMap<>();
     final Map<DocumentId, String> removeOperations = new LinkedHashMap<>();
+    public final Map<DocumentId, OperationParameters> parameters = new LinkedHashMap<>();
+    public Result.Type resultType = Result.Type.success;
 
     @Override
     public CompletableFuture<Result> put(DocumentId documentId, String documentJson, OperationParameters params) {
         allOperations.put(documentId, documentJson);
         putOperations.put(documentId, documentJson);
+        parameters.put(documentId, params);
         return createSuccessResult(documentId);
     }
 
@@ -26,6 +29,7 @@ public class MockVespaFeedClient implements FeedClient {
     public CompletableFuture<Result> update(DocumentId documentId, String updateJson, OperationParameters params) {
         allOperations.put(documentId, updateJson);
         updateOperations.put(documentId, updateJson);
+        parameters.put(documentId, params);
         return createSuccessResult(documentId);
     }
 
@@ -33,12 +37,17 @@ public class MockVespaFeedClient implements FeedClient {
     public CompletableFuture<Result> remove(DocumentId documentId, OperationParameters params) {
         allOperations.put(documentId, null);
         removeOperations.put(documentId, null);
+        parameters.put(documentId, params);
         return createSuccessResult(documentId);
     }
 
     @Override
     public OperationStats stats() {
         return null;
+    }
+
+    @Override
+    public void resetStats() {
     }
 
     @Override
@@ -91,10 +100,11 @@ public class MockVespaFeedClient implements FeedClient {
     }
 
     private CompletableFuture<Result> createSuccessResult(DocumentId documentId) {
+        Result.Type type = resultType;
         return CompletableFuture.completedFuture(new Result() {
             @Override
             public Type type() {
-                return Type.success;
+                return type;
             }
 
             @Override

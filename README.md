@@ -149,6 +149,75 @@ Operation types to retry.
 * Valid Values: Matches: `PUT`, `UPDATE`, `REMOVE`
 * Importance: low
 
+`vespa.circuit.breaker.grace.period.ms`
+
+The period of consecutive failures before the circuit breaker changes state to half-open, during which the feed client
+sends only a single request at a time to probe the cluster. See `vespa.max.failure.ms` for the period after which the
+client shuts down entirely.
+
+* Type: long
+* Default: 10000 (10 seconds)
+* Valid Values: [0,...]
+* Importance: low
+
+`vespa.connection.ttl.ms`
+
+Duration after which the feed client recycles active connections. Useful for rebalancing connections behind a load
+balancer. `0` disables recycling.
+
+* Type: long
+* Default: 0
+* Valid Values: [0,...]
+* Importance: low
+
+`vespa.compression`
+
+Compression to use for request bodies. `AUTO` compresses large request bodies only.
+
+* Type: string
+* Default: AUTO
+* Valid Values: (case insensitive) `AUTO`, `NONE`, `GZIP`
+* Importance: low
+
+`vespa.initial.inflight.factor`
+
+Initial inflight factor of the feed client's throttler. The initial target of inflight operations is
+`minInflight * initialInflightFactor`; the throttler then adjusts it based on observed throughput.
+
+* Type: int
+* Default: 1
+* Valid Values: [1,...]
+* Importance: low
+
+`vespa.benchmark`
+
+Whether the feed client collects operation statistics. The connector does not read them, so disabling this saves a
+little overhead.
+
+* Type: boolean
+* Default: true
+* Importance: low
+
+`vespa.request.headers`
+
+Additional HTTP headers sent with every request to Vespa, as a comma-separated list of `Name:Value` pairs, such as
+`X-Team:search,X-Env:prod`. Header values cannot contain commas. Values are logged in plain text, so use
+`vespa.cloud.token` for the Vespa Cloud token.
+
+* Type: list
+* Default: ""
+* Valid Values: comma-separated list of `Name:Value` pairs
+* Importance: low
+
+`vespa.cloud.token`
+
+Vespa Cloud token when using token based authentication. Sent as an `Authorization: Bearer` header and masked in logs.
+
+* Type: password
+* Default: null
+* Valid Values: non-empty string
+* Importance: low
+
 #### Operation
 
 `vespa.operation.timeout.ms`
@@ -178,6 +247,27 @@ The trace level of network traffic.
 * Valid Values: [0,...,9]
 * Importance: low
 
+`vespa.operation.condition`
+
+Test-and-set condition applied to every put and remove in UPSERT mode, such as `music.locked == false`. Operations whose
+condition is not met are handled according to `vespa.behavior.on.malformed.documents`. Ignored in RAW mode, where each
+operation carries its own `condition`.
+
+* Type: string
+* Default: null
+* Valid Values: non-empty string without ISO control characters
+* Importance: low
+
+`vespa.operation.create.if.non.existent`
+
+In UPSERT mode, create the document when a conditional put targets a document that does not exist, instead of failing
+the condition. Only meaningful together with `vespa.operation.condition`. Ignored in RAW mode, where each operation
+carries its own `create`.
+
+* Type: boolean
+* Default: false
+* Importance: low
+
 #### Data Conversion
 
 `vespa.drop.invalid.message`
@@ -197,14 +287,104 @@ How to handle records that Vespa rejects due to document malformation. Valid opt
 * Valid Values: Matches: `IGNORE`, `WARN`, `FAIL`
 * Importance: low
 
-`vespa.cloud.token`
+#### Security
 
-Vespa Cloud token when using token based authentication.
+`vespa.ssl.certificate.path`
+
+Path to a PEM file with the client certificate used for mutual TLS, such as the data plane certificate of a Vespa Cloud
+application. Must be set together with `vespa.ssl.private.key.path`.
 
 * Type: string
 * Default: null
-* Valid Values: Matches: non-empty string
+* Valid Values: non-empty string without ISO control characters
+* Importance: medium
+
+`vespa.ssl.private.key.path`
+
+Path to a PEM file with the private key of the client certificate. Must be set together with
+`vespa.ssl.certificate.path`.
+
+* Type: string
+* Default: null
+* Valid Values: non-empty string without ISO control characters
+* Importance: medium
+
+`vespa.ssl.ca.certificates.path`
+
+Path to a PEM file with trusted CA certificates. Overrides the JVM default truststore.
+
+* Type: string
+* Default: null
+* Valid Values: non-empty string without ISO control characters
 * Importance: low
+
+`vespa.ssl.hostname.verification.enabled`
+
+Whether to verify that the Vespa endpoint hostname matches its TLS certificate. Disable only for testing.
+
+* Type: boolean
+* Default: true
+* Importance: low
+
+#### Proxy
+
+`vespa.proxy.url`
+
+HTTP or HTTPS proxy URL used for all endpoints, such as `http://proxy:3128`.
+
+* Type: string
+* Default: null
+* Valid Values: http or https URL
+* Importance: low
+
+`vespa.proxy.ca.certificates.path`
+
+Path to a PEM file with trusted CA certificates for an HTTPS proxy. Overrides the JVM default truststore.
+
+* Type: string
+* Default: null
+* Valid Values: non-empty string without ISO control characters
+* Importance: low
+
+`vespa.proxy.hostname.verification.enabled`
+
+Whether to verify that the HTTPS proxy hostname matches its TLS certificate. Disable only for testing.
+
+* Type: boolean
+* Default: true
+* Importance: low
+
+`vespa.proxy.request.headers`
+
+Additional HTTP headers sent with every request to the proxy, as a comma-separated list of `Name:Value` pairs, such as
+`Proxy-Authorization:Basic abc`. Header values cannot contain commas and are logged in plain text.
+
+* Type: list
+* Default: ""
+* Valid Values: comma-separated list of `Name:Value` pairs
+* Importance: low
+
+### Authentication
+
+#### Mutual TLS
+
+To authenticate with a client certificate, as Vespa Cloud data plane access or a self-hosted Vespa with
+[mTLS](https://docs.vespa.ai/en/mtls.html) requires, point the connector at PEM files available on every Kafka Connect
+worker:
+
+```properties
+vespa.endpoint=https://my-app.my-tenant.aws-us-east-1c.z.vespa-app.cloud/
+vespa.ssl.certificate.path=/etc/kafka-connect/vespa/data-plane-public-cert.pem
+vespa.ssl.private.key.path=/etc/kafka-connect/vespa/data-plane-private-key.pem
+# Only needed when the server certificate is not signed by a CA in the JVM default truststore.
+vespa.ssl.ca.certificates.path=/etc/kafka-connect/vespa/ca.pem
+```
+
+See [config/quickstart-vespa-mtls.json](config/quickstart-vespa-mtls.json) for a full example.
+
+#### Token
+
+For Vespa Cloud token authentication, set `vespa.cloud.token`.
 
 #### Examples
 
