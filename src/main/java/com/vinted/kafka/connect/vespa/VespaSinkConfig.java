@@ -56,8 +56,8 @@ public class VespaSinkConfig extends AbstractConfig {
     private static final String MAX_STREAMS_PER_CONNECTION_DOC = "The maximum number of streams per HTTP/2 connection "
             + "of the feed client. This determines the maximum number of concurrent, in-flight requests of the "
             + "client, which is `vespa.connections.per.endpoint` times this value per endpoint. Prefer more streams "
-            + "to more connections, when possible. The feed client automatically throttles load to achieve the best throughput, and the "
-            + "actual number of streams per connection is usually lower than the maximum.";
+            + "to more connections, when possible. The feed client automatically throttles load to achieve the best "
+            + "throughput, and the actual number of streams per connection is usually lower than the maximum.";
     private static final String MAX_STREAMS_PER_CONNECTION_DISPLAY = "Max streams per connection";
     private static final int MAX_STREAMS_PER_CONNECTION_DEFAULT = 16;
 
