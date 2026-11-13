@@ -101,6 +101,20 @@ class VespaSinkTaskRetryTest {
     }
 
     @Test
+    void startsTheRetryBudgetAgainAfterASuccessfulBatch() {
+        task.start(params);
+
+        client.answerAll(failure(UNAVAILABLE));
+        assertThrows(RetriableException.class, () -> task.put(batch()));
+        client.answerAll(result(Result.Type.success));
+        task.put(batch());
+        client.answerAll(failure(UNAVAILABLE));
+
+        assertThrows(RetriableException.class, () -> task.put(batch()));
+        verify(context, times(2)).timeout(anyLong());
+    }
+
+    @Test
     void failsTheTaskOnFailuresThatAreNotTransient() {
         client.answerAll(failure(UNAUTHORIZED));
         task.start(params);

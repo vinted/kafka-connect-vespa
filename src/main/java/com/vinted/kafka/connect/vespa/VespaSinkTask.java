@@ -3,9 +3,7 @@ package com.vinted.kafka.connect.vespa;
 import ai.vespa.feed.client.FeedClient;
 import com.github.jcustenborder.kafka.connect.utils.VersionUtil;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeed;
-import com.vinted.kafka.connect.vespa.feeders.VespaFeedException;
 import org.apache.kafka.connect.errors.ConnectException;
-import org.apache.kafka.connect.errors.RetriableException;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTask;
@@ -15,10 +13,12 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
 public class VespaSinkTask extends SinkTask {
     private static final Logger log = LoggerFactory.getLogger(VespaSinkTask.class);
+    private static final ErrantRecordReporter NO_REPORTER = (record, error) -> CompletableFuture.completedFuture(null);
 
     private final Function<VespaSinkConfig, FeedClient> clients;
     private VespaFeed feed;
@@ -38,7 +38,7 @@ public class VespaSinkTask extends SinkTask {
 
         ErrantRecordReporter reporter = errantRecordReporter();
         VespaSinkConfig config = new VespaSinkConfig(props);
-        this.retryBudget = config.retryBudget();
+        this.retryBudget = config.retryBudget(context::timeout);
         log.info("Using {} operational mode.", config.operationalMode());
 
         this.feed = VespaFeed.open(config, retryBudget.reportingOnce(reporter), clients);
@@ -50,12 +50,13 @@ public class VespaSinkTask extends SinkTask {
             ErrantRecordReporter reporter = context.errantRecordReporter();
             if (reporter == null) {
                 log.info("Errant record reporter not configured.");
+                return NO_REPORTER;
             }
             return reporter;
         } catch (NoClassDefFoundError | NoSuchMethodError e) {
             // Will occur in Connect runtimes earlier than 2.6
             log.warn("Kafka versions prior to 2.6 do not support the errant record reporter.");
-            return null;
+            return NO_REPORTER;
         }
     }
 
@@ -66,40 +67,7 @@ public class VespaSinkTask extends SinkTask {
         }
 
         log.debug("Putting {} records.", collection.size());
-
-        try {
-            feed.feed(collection);
-            retryBudget.succeeded();
-        } catch (VespaFeedException e) {
-            throw failure(e, collection.size());
-        }
-    }
-
-    /**
-     * Returns a {@link RetriableException} for a transient failure while the retry budget lasts, after asking Connect
-     * to back off; otherwise a {@link ConnectException} that fails the task.
-     */
-    private ConnectException failure(VespaFeedException e, int records) {
-        RetryBudget.Decision decision = retryBudget.failed(e.isTransient());
-
-        switch (decision.outcome) {
-            case RETRY:
-                log.warn("Vespa is unavailable, retrying {} records in {} ms (retry {} of {}): {}",
-                        records, decision.backoffMs, decision.attempt, retryBudget.maxRetries(), e.getMessage());
-                context.timeout(decision.backoffMs);
-                return new RetriableException(e.getCause());
-            case EXHAUSTED:
-                // Connect logs the stack trace of the exception thrown here.
-                log.error("Vespa is still unavailable after {} retries: {}. To wait longer, increase '{}' or '{}'.",
-                        retryBudget.maxRetries(), e.getMessage(), VespaSinkConfig.MAX_RETRIES_CONFIG,
-                        VespaSinkConfig.RETRY_BACKOFF_MS_CONFIG);
-                return e;
-            case NOT_TRANSIENT:
-            default:
-                // Each record's failure is logged where it is handled, and Connect logs the exception thrown here.
-                log.error("Failing the task after failing to feed {} records to Vespa: {}", records, e.getMessage());
-                return e;
-        }
+        retryBudget.deliver(collection, feed::feed);
     }
 
     @Override
