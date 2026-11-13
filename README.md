@@ -10,11 +10,11 @@ This connector has not yet been published to Confluent Hub. To install it, downl
 install it using `confluent-hub` command line tool.
 
 ```sh
-wget https://github.com/vinted/kafka-connect-vespa/releases/download/v1.2.0/vinted-kafka-connect-vespa-v1.2.0.zip -O /tmp/vinted-kafka-connect-vespa-v1.2.0.zip -q
+wget https://github.com/vinted/kafka-connect-vespa/releases/download/v1.2.1/vinted-kafka-connect-vespa-1.2.1.zip -O /tmp/vinted-kafka-connect-vespa-1.2.1.zip -q
 ```
 
 ```sh
-confluent-hub install --no-prompt /tmp/vinted-kafka-connect-vespa-v1.2.0.zip
+confluent-hub install --no-prompt /tmp/vinted-kafka-connect-vespa-1.2.1.zip
 ```
 
 ### Operational modes
