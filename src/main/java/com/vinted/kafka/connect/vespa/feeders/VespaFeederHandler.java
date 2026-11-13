@@ -67,18 +67,18 @@ public class VespaFeederHandler {
 
                 switch (config.behaviorOnMalformedDoc) {
                     case IGNORE:
-                        log.info(ignoreMessage(record), throwable);
+                        log.info(ignoreMessage(record), resultThrowable);
                         promise.complete(result);
                         break;
                     case WARN:
-                        log.warn(ignoreMessage(record), throwable);
+                        log.warn(ignoreMessage(record), resultThrowable);
                         promise.complete(result);
                         break;
                     case FAIL:
                     default:
-                        log.error(errorMessage(record), throwable);
+                        log.error(errorMessage(record), resultThrowable);
 
-                        promise.completeExceptionally(throwable);
+                        promise.completeExceptionally(resultThrowable);
                 }
             }
         });

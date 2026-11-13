@@ -112,7 +112,7 @@ public class VespaUpsertFeeder implements VespaFeeder {
 
         public CompletableFuture<Result> feed(FeedClient client, OperationParameters parameters) {
             if (documentJson == null) {
-                return client.remove(documentId, parameters);
+                return client.remove(documentId, parameters.createIfNonExistent(false));
             } else {
                 return client.put(documentId, documentJson, parameters);
             }

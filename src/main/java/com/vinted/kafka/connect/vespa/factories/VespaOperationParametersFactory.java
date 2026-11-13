@@ -20,6 +20,14 @@ public class VespaOperationParametersFactory {
             parameters = parameters.tracelevel(config.tracelevel);
         }
 
+        if (!Strings.isNullOrEmpty(config.condition)) {
+            parameters = parameters.testAndSetCondition(config.condition);
+        }
+
+        if (config.createIfNonExistent) {
+            parameters = parameters.createIfNonExistent(true);
+        }
+
         return parameters;
     }
 }

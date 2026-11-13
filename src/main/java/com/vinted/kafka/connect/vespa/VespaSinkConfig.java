@@ -1,12 +1,18 @@
 package com.vinted.kafka.connect.vespa;
 
 import ai.vespa.feed.client.FeedClient;
+import ai.vespa.feed.client.FeedClientBuilder;
 import com.github.jcustenborder.kafka.connect.utils.config.ConfigUtils;
 import com.github.jcustenborder.kafka.connect.utils.config.validators.Validators;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.common.config.types.Password;
 
 import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -98,6 +104,92 @@ public class VespaSinkConfig extends AbstractConfig {
     private static final String RETRY_STRATEGY_RETRIES_DISPLAY = "Max Retries";
     private static final int RETRY_STRATEGY_RETRIES_DEFAULT = 10;
 
+    public static final String CIRCUIT_BREAKER_GRACE_PERIOD_MS_CONFIG = "vespa.circuit.breaker.grace.period.ms";
+    private static final String CIRCUIT_BREAKER_GRACE_PERIOD_MS_DOC = "The period of consecutive failures before the "
+            + "circuit breaker changes state to half-open, during which the feed client sends only a single request "
+            + "at a time to probe the cluster. See `vespa.max.failure.ms` for the period after which the "
+            + "client shuts down entirely.";
+    private static final String CIRCUIT_BREAKER_GRACE_PERIOD_MS_DISPLAY = "Circuit breaker grace period ms";
+    private static final long CIRCUIT_BREAKER_GRACE_PERIOD_MS_DEFAULT = 10000L;
+
+    public static final String CONNECTION_TTL_MS_CONFIG = "vespa.connection.ttl.ms";
+    private static final String CONNECTION_TTL_MS_DOC = "Duration after which the feed client recycles active "
+            + "connections. Useful for rebalancing connections behind a load balancer. `0` disables recycling.";
+    private static final String CONNECTION_TTL_MS_DISPLAY = "Connection TTL ms";
+    private static final long CONNECTION_TTL_MS_DEFAULT = 0L;
+
+    public static final String COMPRESSION_CONFIG = "vespa.compression";
+    private static final String COMPRESSION_DOC = "Compression to use for request bodies. `AUTO` compresses large "
+            + "request bodies only. Valid options are `AUTO`, `NONE` and `GZIP`.";
+    private static final String COMPRESSION_DISPLAY = "Compression";
+    private static final FeedClientBuilder.Compression COMPRESSION_DEFAULT = FeedClientBuilder.Compression.auto;
+
+    public static final String INITIAL_INFLIGHT_FACTOR_CONFIG = "vespa.initial.inflight.factor";
+    private static final String INITIAL_INFLIGHT_FACTOR_DOC = "Initial inflight factor of the feed client's "
+            + "throttler. The initial target of inflight operations is `minInflight * initialInflightFactor`; the "
+            + "throttler then adjusts it based on observed throughput.";
+    private static final String INITIAL_INFLIGHT_FACTOR_DISPLAY = "Initial inflight factor";
+    private static final int INITIAL_INFLIGHT_FACTOR_DEFAULT = 1;
+
+    public static final String BENCHMARK_CONFIG = "vespa.benchmark";
+    private static final String BENCHMARK_DOC = "Whether the feed client collects operation statistics. The "
+            + "connector does not read them, so disabling this saves a little overhead.";
+    private static final String BENCHMARK_DISPLAY = "Benchmark";
+    private static final boolean BENCHMARK_DEFAULT = true;
+
+    public static final String REQUEST_HEADERS_CONFIG = "vespa.request.headers";
+    private static final String REQUEST_HEADERS_DOC = "Additional HTTP headers sent with every request to Vespa, as "
+            + "a comma-separated list of `Name:Value` pairs, such as `X-Team:search,X-Env:prod`. Header values "
+            + "cannot contain commas. Values are logged in plain text, so use `vespa.cloud.token` for the Vespa "
+            + "Cloud token.";
+    private static final String REQUEST_HEADERS_DISPLAY = "Request headers";
+
+    // Security group
+    public static final String SSL_CERTIFICATE_PATH_CONFIG = "vespa.ssl.certificate.path";
+    private static final String SSL_CERTIFICATE_PATH_DOC = "Path to a PEM file with the client certificate used for "
+            + "mutual TLS, such as the data plane certificate of a Vespa Cloud application. Must be set together "
+            + "with `vespa.ssl.private.key.path`.";
+    private static final String SSL_CERTIFICATE_PATH_DISPLAY = "Client certificate path";
+
+    public static final String SSL_PRIVATE_KEY_PATH_CONFIG = "vespa.ssl.private.key.path";
+    private static final String SSL_PRIVATE_KEY_PATH_DOC = "Path to a PEM file with the private key of the client "
+            + "certificate. Must be set together with `vespa.ssl.certificate.path`.";
+    private static final String SSL_PRIVATE_KEY_PATH_DISPLAY = "Client private key path";
+
+    public static final String SSL_CA_CERTIFICATES_PATH_CONFIG = "vespa.ssl.ca.certificates.path";
+    private static final String SSL_CA_CERTIFICATES_PATH_DOC = "Path to a PEM file with trusted CA certificates. "
+            + "Overrides the JVM default truststore.";
+    private static final String SSL_CA_CERTIFICATES_PATH_DISPLAY = "CA certificates path";
+
+    public static final String SSL_HOSTNAME_VERIFICATION_ENABLED_CONFIG = "vespa.ssl.hostname.verification.enabled";
+    private static final String SSL_HOSTNAME_VERIFICATION_ENABLED_DOC = "Whether to verify that the Vespa endpoint "
+            + "hostname matches its TLS certificate. Disable only for testing.";
+    private static final String SSL_HOSTNAME_VERIFICATION_ENABLED_DISPLAY = "Hostname verification";
+    private static final boolean SSL_HOSTNAME_VERIFICATION_ENABLED_DEFAULT = true;
+
+    // Proxy group
+    public static final String PROXY_URL_CONFIG = "vespa.proxy.url";
+    private static final String PROXY_URL_DOC = "HTTP or HTTPS proxy URL used for all endpoints, such as "
+            + "`http://proxy:3128`.";
+    private static final String PROXY_URL_DISPLAY = "Proxy URL";
+
+    public static final String PROXY_CA_CERTIFICATES_PATH_CONFIG = "vespa.proxy.ca.certificates.path";
+    private static final String PROXY_CA_CERTIFICATES_PATH_DOC = "Path to a PEM file with trusted CA certificates "
+            + "for an HTTPS proxy. Overrides the JVM default truststore.";
+    private static final String PROXY_CA_CERTIFICATES_PATH_DISPLAY = "Proxy CA certificates path";
+
+    public static final String PROXY_HOSTNAME_VERIFICATION_ENABLED_CONFIG = "vespa.proxy.hostname.verification.enabled";
+    private static final String PROXY_HOSTNAME_VERIFICATION_ENABLED_DOC = "Whether to verify that the HTTPS proxy "
+            + "hostname matches its TLS certificate. Disable only for testing.";
+    private static final String PROXY_HOSTNAME_VERIFICATION_ENABLED_DISPLAY = "Proxy hostname verification";
+    private static final boolean PROXY_HOSTNAME_VERIFICATION_ENABLED_DEFAULT = true;
+
+    public static final String PROXY_REQUEST_HEADERS_CONFIG = "vespa.proxy.request.headers";
+    private static final String PROXY_REQUEST_HEADERS_DOC = "Additional HTTP headers sent with every request to the "
+            + "proxy, as a comma-separated list of `Name:Value` pairs, such as `Proxy-Authorization:Basic abc`. "
+            + "Header values cannot contain commas and are logged in plain text.";
+    private static final String PROXY_REQUEST_HEADERS_DISPLAY = "Proxy request headers";
+
     // Operation group
     public static final String OPERATION_TIMEOUT_MS_CONFIG = "vespa.operation.timeout.ms";
     private static final String OPERATION_TIMEOUT_MS_DOC = "Feed operation timeout.";
@@ -113,6 +205,21 @@ public class VespaSinkConfig extends AbstractConfig {
     private static final String OPERATION_TRACELEVEL_DOC = "The trace level of network traffic.";
     private static final String OPERATION_TRACELEVEL_DISPLAY = "Operation tracelevel";
     private static final int OPERATION_TRACELEVEL_DEFAULT = 0;
+
+    public static final String OPERATION_CONDITION_CONFIG = "vespa.operation.condition";
+    private static final String OPERATION_CONDITION_DOC = "Test-and-set condition applied to every put and remove "
+            + "in UPSERT mode, such as `music.locked == false`. Operations whose condition is not met are handled "
+            + "according to `vespa.behavior.on.malformed.documents`. Ignored in RAW mode, where each "
+            + "operation carries its own `condition`.";
+    private static final String OPERATION_CONDITION_DISPLAY = "Operation condition";
+
+    public static final String OPERATION_CREATE_IF_NON_EXISTENT_CONFIG = "vespa.operation.create.if.non.existent";
+    private static final String OPERATION_CREATE_IF_NON_EXISTENT_DOC = "In UPSERT mode, create the document when a "
+            + "conditional put targets a document that does not exist, instead of failing the condition. Only "
+            + "meaningful together with `vespa.operation.condition`. Ignored in RAW mode, where each "
+            + "operation carries its own `create`.";
+    private static final String OPERATION_CREATE_IF_NON_EXISTENT_DISPLAY = "Create if non-existent";
+    private static final boolean OPERATION_CREATE_IF_NON_EXISTENT_DEFAULT = false;
 
     // Data conversion group
 
@@ -131,6 +238,45 @@ public class VespaSinkConfig extends AbstractConfig {
     private static final String CONNECTOR_GROUP = "Connector";
     private static final String OPERATION_GROUP = "Operation";
     private static final String DATA_CONVERSION_GROUP = "Data Conversion";
+    private static final String SECURITY_GROUP = "Security";
+    private static final String PROXY_GROUP = "Proxy";
+
+    private static final ConfigDef.Validator NON_EMPTY_STRING =
+            ConfigDef.NonEmptyStringWithoutControlChars.nonEmptyStringWithoutControlChars();
+
+    private static final ConfigDef.Validator NON_EMPTY_PASSWORD = ConfigDef.LambdaValidator.with(
+            (name, value) -> {
+                if (value != null && ((Password) value).value().isEmpty()) {
+                    throw new ConfigException(name, "[hidden]", "Value must not be empty");
+                }
+            },
+            () -> "non-empty string");
+
+    private static final ConfigDef.Validator HEADERS = ConfigDef.LambdaValidator.with(
+            (name, value) -> {
+                try {
+                    parseHeaders(name, (List<?>) value);
+                } catch (IllegalArgumentException e) {
+                    throw new ConfigException(name, value, e.getMessage());
+                }
+            },
+            () -> "comma-separated list of `Name:Value` pairs");
+
+    private static final ConfigDef.Validator OPTIONAL_URL = ConfigDef.LambdaValidator.with(
+            (name, value) -> {
+                if (value == null) {
+                    return;
+                }
+                try {
+                    URI uri = new URI((String) value);
+                    if (!"http".equals(uri.getScheme()) && !"https".equals(uri.getScheme()) || uri.getHost() == null) {
+                        throw new ConfigException(name, value, "Must be an http or https URL with a host");
+                    }
+                } catch (URISyntaxException e) {
+                    throw new ConfigException(name, value, e.getMessage());
+                }
+            },
+            () -> "http or https URL");
 
     public static final ConfigDef CONFIG = baseConfigDef();
 
@@ -139,6 +285,8 @@ public class VespaSinkConfig extends AbstractConfig {
         addConnectorConfigs(configDef);
         addOperationConfigs(configDef);
         addDataConversionConfigs(configDef);
+        addSecurityConfigs(configDef);
+        addProxyConfigs(configDef);
         return configDef;
     }
 
@@ -158,9 +306,9 @@ public class VespaSinkConfig extends AbstractConfig {
                         ENDPOINT_DISPLAY)
                 .define(
                         VESPA_CLOUD_TOKEN_CONFIG,
-                        ConfigDef.Type.STRING,
+                        ConfigDef.Type.PASSWORD,
                         VESPA_CLOUD_TOKEN_DEFAULT,
-                        ConfigDef.NonEmptyStringWithoutControlChars.nonEmptyStringWithoutControlChars(),
+                        NON_EMPTY_PASSWORD,
                         ConfigDef.Importance.LOW,
                         VESPA_CLOUD_TOKEN_DOC,
                         CONNECTOR_GROUP,
@@ -274,7 +422,170 @@ public class VespaSinkConfig extends AbstractConfig {
                         CONNECTOR_GROUP,
                         ++order,
                         ConfigDef.Width.SHORT,
-                        RETRY_STRATEGY_OPERATION_TYPES_DISPLAY);
+                        RETRY_STRATEGY_OPERATION_TYPES_DISPLAY)
+                .define(
+                        CIRCUIT_BREAKER_GRACE_PERIOD_MS_CONFIG,
+                        ConfigDef.Type.LONG,
+                        CIRCUIT_BREAKER_GRACE_PERIOD_MS_DEFAULT,
+                        atLeast(0),
+                        ConfigDef.Importance.LOW,
+                        CIRCUIT_BREAKER_GRACE_PERIOD_MS_DOC,
+                        CONNECTOR_GROUP,
+                        ++order,
+                        ConfigDef.Width.SHORT,
+                        CIRCUIT_BREAKER_GRACE_PERIOD_MS_DISPLAY)
+                .define(
+                        CONNECTION_TTL_MS_CONFIG,
+                        ConfigDef.Type.LONG,
+                        CONNECTION_TTL_MS_DEFAULT,
+                        atLeast(0),
+                        ConfigDef.Importance.LOW,
+                        CONNECTION_TTL_MS_DOC,
+                        CONNECTOR_GROUP,
+                        ++order,
+                        ConfigDef.Width.SHORT,
+                        CONNECTION_TTL_MS_DISPLAY)
+                .define(
+                        COMPRESSION_CONFIG,
+                        ConfigDef.Type.STRING,
+                        COMPRESSION_DEFAULT.name().toUpperCase(Locale.ROOT),
+                        ConfigDef.CaseInsensitiveValidString.in(Arrays.stream(FeedClientBuilder.Compression.values())
+                                .map(c -> c.name().toUpperCase(Locale.ROOT))
+                                .toArray(String[]::new)),
+                        ConfigDef.Importance.LOW,
+                        COMPRESSION_DOC,
+                        CONNECTOR_GROUP,
+                        ++order,
+                        ConfigDef.Width.SHORT,
+                        COMPRESSION_DISPLAY)
+                .define(
+                        INITIAL_INFLIGHT_FACTOR_CONFIG,
+                        ConfigDef.Type.INT,
+                        INITIAL_INFLIGHT_FACTOR_DEFAULT,
+                        atLeast(1),
+                        ConfigDef.Importance.LOW,
+                        INITIAL_INFLIGHT_FACTOR_DOC,
+                        CONNECTOR_GROUP,
+                        ++order,
+                        ConfigDef.Width.SHORT,
+                        INITIAL_INFLIGHT_FACTOR_DISPLAY)
+                .define(
+                        BENCHMARK_CONFIG,
+                        ConfigDef.Type.BOOLEAN,
+                        BENCHMARK_DEFAULT,
+                        ConfigDef.Importance.LOW,
+                        BENCHMARK_DOC,
+                        CONNECTOR_GROUP,
+                        ++order,
+                        ConfigDef.Width.SHORT,
+                        BENCHMARK_DISPLAY)
+                .define(
+                        REQUEST_HEADERS_CONFIG,
+                        ConfigDef.Type.LIST,
+                        "",
+                        HEADERS,
+                        ConfigDef.Importance.LOW,
+                        REQUEST_HEADERS_DOC,
+                        CONNECTOR_GROUP,
+                        ++order,
+                        ConfigDef.Width.LONG,
+                        REQUEST_HEADERS_DISPLAY);
+    }
+
+    private static void addSecurityConfigs(ConfigDef configDef) {
+        int order = 0;
+        configDef
+                .define(
+                        SSL_CERTIFICATE_PATH_CONFIG,
+                        ConfigDef.Type.STRING,
+                        null,
+                        NON_EMPTY_STRING,
+                        ConfigDef.Importance.MEDIUM,
+                        SSL_CERTIFICATE_PATH_DOC,
+                        SECURITY_GROUP,
+                        ++order,
+                        ConfigDef.Width.LONG,
+                        SSL_CERTIFICATE_PATH_DISPLAY)
+                .define(
+                        SSL_PRIVATE_KEY_PATH_CONFIG,
+                        ConfigDef.Type.STRING,
+                        null,
+                        NON_EMPTY_STRING,
+                        ConfigDef.Importance.MEDIUM,
+                        SSL_PRIVATE_KEY_PATH_DOC,
+                        SECURITY_GROUP,
+                        ++order,
+                        ConfigDef.Width.LONG,
+                        SSL_PRIVATE_KEY_PATH_DISPLAY)
+                .define(
+                        SSL_CA_CERTIFICATES_PATH_CONFIG,
+                        ConfigDef.Type.STRING,
+                        null,
+                        NON_EMPTY_STRING,
+                        ConfigDef.Importance.LOW,
+                        SSL_CA_CERTIFICATES_PATH_DOC,
+                        SECURITY_GROUP,
+                        ++order,
+                        ConfigDef.Width.LONG,
+                        SSL_CA_CERTIFICATES_PATH_DISPLAY)
+                .define(
+                        SSL_HOSTNAME_VERIFICATION_ENABLED_CONFIG,
+                        ConfigDef.Type.BOOLEAN,
+                        SSL_HOSTNAME_VERIFICATION_ENABLED_DEFAULT,
+                        ConfigDef.Importance.LOW,
+                        SSL_HOSTNAME_VERIFICATION_ENABLED_DOC,
+                        SECURITY_GROUP,
+                        ++order,
+                        ConfigDef.Width.SHORT,
+                        SSL_HOSTNAME_VERIFICATION_ENABLED_DISPLAY);
+    }
+
+    private static void addProxyConfigs(ConfigDef configDef) {
+        int order = 0;
+        configDef
+                .define(
+                        PROXY_URL_CONFIG,
+                        ConfigDef.Type.STRING,
+                        null,
+                        OPTIONAL_URL,
+                        ConfigDef.Importance.LOW,
+                        PROXY_URL_DOC,
+                        PROXY_GROUP,
+                        ++order,
+                        ConfigDef.Width.LONG,
+                        PROXY_URL_DISPLAY)
+                .define(
+                        PROXY_CA_CERTIFICATES_PATH_CONFIG,
+                        ConfigDef.Type.STRING,
+                        null,
+                        NON_EMPTY_STRING,
+                        ConfigDef.Importance.LOW,
+                        PROXY_CA_CERTIFICATES_PATH_DOC,
+                        PROXY_GROUP,
+                        ++order,
+                        ConfigDef.Width.LONG,
+                        PROXY_CA_CERTIFICATES_PATH_DISPLAY)
+                .define(
+                        PROXY_HOSTNAME_VERIFICATION_ENABLED_CONFIG,
+                        ConfigDef.Type.BOOLEAN,
+                        PROXY_HOSTNAME_VERIFICATION_ENABLED_DEFAULT,
+                        ConfigDef.Importance.LOW,
+                        PROXY_HOSTNAME_VERIFICATION_ENABLED_DOC,
+                        PROXY_GROUP,
+                        ++order,
+                        ConfigDef.Width.SHORT,
+                        PROXY_HOSTNAME_VERIFICATION_ENABLED_DISPLAY)
+                .define(
+                        PROXY_REQUEST_HEADERS_CONFIG,
+                        ConfigDef.Type.LIST,
+                        "",
+                        HEADERS,
+                        ConfigDef.Importance.LOW,
+                        PROXY_REQUEST_HEADERS_DOC,
+                        PROXY_GROUP,
+                        ++order,
+                        ConfigDef.Width.LONG,
+                        PROXY_REQUEST_HEADERS_DISPLAY);
     }
 
     private static void addOperationConfigs(ConfigDef configDef) {
@@ -312,7 +623,28 @@ public class VespaSinkConfig extends AbstractConfig {
                         OPERATION_GROUP,
                         ++order,
                         ConfigDef.Width.SHORT,
-                        OPERATION_TRACELEVEL_DISPLAY);
+                        OPERATION_TRACELEVEL_DISPLAY)
+                .define(
+                        OPERATION_CONDITION_CONFIG,
+                        ConfigDef.Type.STRING,
+                        null,
+                        NON_EMPTY_STRING,
+                        ConfigDef.Importance.LOW,
+                        OPERATION_CONDITION_DOC,
+                        OPERATION_GROUP,
+                        ++order,
+                        ConfigDef.Width.LONG,
+                        OPERATION_CONDITION_DISPLAY)
+                .define(
+                        OPERATION_CREATE_IF_NON_EXISTENT_CONFIG,
+                        ConfigDef.Type.BOOLEAN,
+                        OPERATION_CREATE_IF_NON_EXISTENT_DEFAULT,
+                        ConfigDef.Importance.LOW,
+                        OPERATION_CREATE_IF_NON_EXISTENT_DOC,
+                        OPERATION_GROUP,
+                        ++order,
+                        ConfigDef.Width.SHORT,
+                        OPERATION_CREATE_IF_NON_EXISTENT_DISPLAY);
     }
 
     private static void addDataConversionConfigs(ConfigDef configDef) {
@@ -358,6 +690,22 @@ public class VespaSinkConfig extends AbstractConfig {
     public final BehaviorOnMalformedDoc behaviorOnMalformedDoc;
     public final OperationalMode operationalMode;
     public final String vespaCloudToken;
+    public final Duration circuitBreakerGracePeriod;
+    public final Duration connectionTtl;
+    public final FeedClientBuilder.Compression compression;
+    public final int initialInflightFactor;
+    public final boolean benchmark;
+    public final Map<String, String> requestHeaders;
+    public final Path sslCertificatePath;
+    public final Path sslPrivateKeyPath;
+    public final Path sslCaCertificatesPath;
+    public final boolean sslHostnameVerificationEnabled;
+    public final URI proxyUrl;
+    public final Path proxyCaCertificatesPath;
+    public final boolean proxyHostnameVerificationEnabled;
+    public final Map<String, String> proxyRequestHeaders;
+    public final String condition;
+    public final boolean createIfNonExistent;
 
     public VespaSinkConfig(Map<String, ?> configProviderProps) {
         super(CONFIG, configProviderProps);
@@ -374,7 +722,8 @@ public class VespaSinkConfig extends AbstractConfig {
         this.route = getString(OPERATION_ROUTE_CONFIG);
         this.timeout = Duration.ofMillis(getInt(OPERATION_TIMEOUT_MS_CONFIG));
         this.tracelevel = getInt(OPERATION_TRACELEVEL_CONFIG);
-        this.vespaCloudToken = getString(VESPA_CLOUD_TOKEN_CONFIG);
+        Password token = getPassword(VESPA_CLOUD_TOKEN_CONFIG);
+        this.vespaCloudToken = token == null ? null : token.value();
         this.urls = getList(ENDPOINT_CONFIG)
                 .stream()
                 .map(s -> s.endsWith("/") ? s : s + "/")
@@ -383,6 +732,50 @@ public class VespaSinkConfig extends AbstractConfig {
         this.dropInvalidMessage = getBoolean(DROP_INVALID_MESSAGE_CONFIG);
         this.behaviorOnMalformedDoc = ConfigUtils.getEnum(BehaviorOnMalformedDoc.class, this, BEHAVIOR_ON_MALFORMED_DOCS_CONFIG);
         this.operationalMode = ConfigUtils.getEnum(OperationalMode.class, this, OPERATIONAL_MODE_CONFIG);
+        this.circuitBreakerGracePeriod = Duration.ofMillis(getLong(CIRCUIT_BREAKER_GRACE_PERIOD_MS_CONFIG));
+        this.connectionTtl = Duration.ofMillis(getLong(CONNECTION_TTL_MS_CONFIG));
+        this.compression = FeedClientBuilder.Compression.valueOf(getString(COMPRESSION_CONFIG).toLowerCase(Locale.ROOT));
+        this.initialInflightFactor = getInt(INITIAL_INFLIGHT_FACTOR_CONFIG);
+        this.benchmark = getBoolean(BENCHMARK_CONFIG);
+        this.requestHeaders = parseHeaders(REQUEST_HEADERS_CONFIG, getList(REQUEST_HEADERS_CONFIG));
+        this.sslCertificatePath = getPath(SSL_CERTIFICATE_PATH_CONFIG);
+        this.sslPrivateKeyPath = getPath(SSL_PRIVATE_KEY_PATH_CONFIG);
+        this.sslCaCertificatesPath = getPath(SSL_CA_CERTIFICATES_PATH_CONFIG);
+        this.sslHostnameVerificationEnabled = getBoolean(SSL_HOSTNAME_VERIFICATION_ENABLED_CONFIG);
+        String proxy = getString(PROXY_URL_CONFIG);
+        this.proxyUrl = proxy == null ? null : URI.create(proxy);
+        this.proxyCaCertificatesPath = getPath(PROXY_CA_CERTIFICATES_PATH_CONFIG);
+        this.proxyHostnameVerificationEnabled = getBoolean(PROXY_HOSTNAME_VERIFICATION_ENABLED_CONFIG);
+        this.proxyRequestHeaders = parseHeaders(PROXY_REQUEST_HEADERS_CONFIG, getList(PROXY_REQUEST_HEADERS_CONFIG));
+        this.condition = getString(OPERATION_CONDITION_CONFIG);
+        this.createIfNonExistent = getBoolean(OPERATION_CREATE_IF_NON_EXISTENT_CONFIG);
+
+        if ((sslCertificatePath == null) != (sslPrivateKeyPath == null)) {
+            throw new ConfigException(String.format("'%s' and '%s' must be set together.",
+                    SSL_CERTIFICATE_PATH_CONFIG, SSL_PRIVATE_KEY_PATH_CONFIG));
+        }
+    }
+
+    private Path getPath(String key) {
+        String value = getString(key);
+        return value == null ? null : Paths.get(value);
+    }
+
+    static Map<String, String> parseHeaders(String name, List<?> entries) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        if (entries == null) {
+            return headers;
+        }
+        for (Object entry : entries) {
+            String header = (String) entry;
+            int separator = header.indexOf(':');
+            if (separator <= 0 || header.substring(0, separator).isBlank()) {
+                throw new IllegalArgumentException(String.format(
+                        "Header '%s' in '%s' must be in the form 'Name:Value'", header, name));
+            }
+            headers.put(header.substring(0, separator).trim(), header.substring(separator + 1).trim());
+        }
+        return headers;
     }
 
     public enum BehaviorOnMalformedDoc {
