@@ -154,7 +154,8 @@ Turns on speed test mode, where each operation succeeds immediately, rather than
 
 `vespa.max.failure.ms`
 
-The period of consecutive failures before shutting down.
+The period of consecutive failures after which the feed client's circuit breaker opens; the connector then builds a new
+feed client.
 
 * Type: int
 * Default: 60000 (1 minute)
@@ -184,8 +185,8 @@ Document type as defined in services.xml and the schema. Defaults to topic name 
 
 `vespa.operational.mode`
 
-The operational mode of the connector. Valid options are upsert and raw. Upsert mode will update existing documents and
-insert new documents, tombstones messages will be converted to delete operations. Raw mode executes all operations using
+The operational mode of the connector. Valid options are upsert and raw. Upsert mode puts each record as a whole
+document, replacing any existing one, and turns tombstones into removes. Raw mode executes all operations using
 document json format as explained in https://docs.vespa.ai/en/reference/document-json-format.html.
 
 * Type: string
@@ -215,7 +216,8 @@ Operation types to retry.
 
 How many times in a row to retry a batch that failed only because Vespa or the network was unavailable, such as during
 a Vespa upgrade: network errors, timeouts, server errors (5xx) and responses that are not Vespa JSON. Client errors
-(4xx) are never retried. Between retries the task pauses its partitions for a random backoff between 0 and
+(4xx) are not retried, except a 4xx whose body is not Vespa JSON, as from a proxy, since the feed client loses its
+status. Between retries the task pauses its partitions for a random backoff between 0 and
 `vespa.retry.backoff.ms * 2^retry`, also capped by the time left until the next offset commit, then redelivers the
 whole batch. The count resets after every successful batch; once it is exhausted the task fails. These retries come on
 top of the feed client's own immediate retries, `vespa.retry.strategy.retries`.
@@ -366,7 +368,8 @@ Whether to drop kafka message when it cannot be converted to output message.
 
 `vespa.behavior.on.malformed.documents`
 
-How to handle records that Vespa rejects due to document malformation. Valid options are `IGNORE`, `WARN`, and `FAIL`.
+How to handle malformed documents (an HTTP 400, or document JSON the feed client cannot parse) and operations whose
+test-and-set condition is not met. Valid options are `IGNORE`, `WARN`, and `FAIL`.
 
 * Type: string
 * Default: FAIL
