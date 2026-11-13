@@ -3,7 +3,6 @@ package com.vinted.kafka.connect.vespa;
 import ai.vespa.feed.client.FeedClient;
 import com.github.jcustenborder.kafka.connect.utils.VersionUtil;
 import com.vinted.kafka.connect.vespa.factories.VespaFeedClientFactory;
-import com.vinted.kafka.connect.vespa.feeders.IndexingFailure;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeed;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeedException;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -25,7 +24,7 @@ public class VespaSinkTask extends SinkTask {
     private final Function<VespaSinkConfig, FeedClient> clients;
     private VespaSinkConfig config;
     private VespaFeed feed;
-    private int retryAttempt;
+    private RetryBudget retryBudget;
 
     public VespaSinkTask() {
         this(VespaFeedClientFactory::create);
@@ -41,10 +40,10 @@ public class VespaSinkTask extends SinkTask {
 
         ErrantRecordReporter reporter = errantRecordReporter();
         this.config = new VespaSinkConfig(props);
-        this.retryAttempt = 0;
+        this.retryBudget = new RetryBudget(config.maxRetries, config.retryBackoffMs);
         log.info("Using {} operational mode.", config.operationalMode);
 
-        this.feed = VespaFeed.open(config, reporter, clients);
+        this.feed = VespaFeed.open(config, retryBudget.reportingOnce(reporter), clients);
     }
 
     private ErrantRecordReporter errantRecordReporter() {
@@ -72,7 +71,7 @@ public class VespaSinkTask extends SinkTask {
 
         try {
             feed.feed(collection);
-            retryAttempt = 0;
+            retryBudget.succeeded();
         } catch (VespaFeedException e) {
             throw failure(e, collection.size());
         }
@@ -83,24 +82,24 @@ public class VespaSinkTask extends SinkTask {
      * to back off; otherwise a {@link ConnectException} that fails the task.
      */
     private ConnectException failure(VespaFeedException e, int records) {
-        if (e.failure() != IndexingFailure.TRANSIENT) {
-            log.error("Error feeding records to Vespa.", e.getCause());
-            return e;
-        }
+        RetryBudget.Decision decision = retryBudget.failed(e.failure());
 
-        if (retryAttempt >= config.maxRetries) {
-            log.error("Vespa is still unavailable after {} retries. To wait longer, increase '{}' or '{}'.",
-                    config.maxRetries, VespaSinkConfig.MAX_RETRIES_CONFIG, VespaSinkConfig.RETRY_BACKOFF_MS_CONFIG,
-                    e.getCause());
-            return e;
+        switch (decision.outcome) {
+            case RETRY:
+                log.warn("Vespa is unavailable, retrying {} records in {} ms (retry {} of {}).",
+                        records, decision.backoffMs, decision.attempt, config.maxRetries, e.getCause());
+                context.timeout(decision.backoffMs);
+                return new RetriableException(e.getCause());
+            case EXHAUSTED:
+                log.error("Vespa is still unavailable after {} retries. To wait longer, increase '{}' or '{}'.",
+                        config.maxRetries, VespaSinkConfig.MAX_RETRIES_CONFIG, VespaSinkConfig.RETRY_BACKOFF_MS_CONFIG,
+                        e.getCause());
+                return e;
+            case NOT_TRANSIENT:
+            default:
+                log.error("Error feeding records to Vespa.", e.getCause());
+                return e;
         }
-
-        retryAttempt++;
-        long backoffMs = Backoff.randomBackoffMs(retryAttempt, config.retryBackoffMs);
-        log.warn("Vespa is unavailable, retrying {} records in {} ms (retry {} of {}).",
-                records, backoffMs, retryAttempt, config.maxRetries, e.getCause());
-        context.timeout(backoffMs);
-        return new RetriableException(e.getCause());
     }
 
     @Override
