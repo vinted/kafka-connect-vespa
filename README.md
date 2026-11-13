@@ -100,12 +100,15 @@ Keys must be strings or integers, as with any converter. A record key is an inva
 
 ### Configuration
 
+<!-- Generated from VespaSinkConfig.CONFIG; edit its *_DOC strings and run ReadmeConfigurationTest with -Dreadme.update=true. -->
+<!-- config:start -->
+
 #### Connector
 
 `vespa.endpoint`
 
-The comma-separated list of one or more Vespa URLs, such as `https://node1:8080,http://node2:8080`
-or `https://node3:8080`. HTTPS is used for all connections if any of the URLs starts with `https:`. A URL without a
+The comma-separated list of one or more Vespa URLs, such as `https://node1:8080,http://node2:8080` or
+`https://node3:8080`. HTTPS is used for all connections if any of the URLs starts with `https:`. A URL without a
 protocol is treated as `http`.
 
 * Type: list
@@ -113,12 +116,21 @@ protocol is treated as `http`.
 * Valid Values:
 * Importance: high
 
+`vespa.cloud.token`
+
+Vespa Cloud token when using token based authentication. Sent as an `Authorization: Bearer` header and masked in logs.
+
+* Type: password
+* Default: null
+* Valid Values: non-empty string
+* Importance: low
+
 `vespa.connections.per.endpoint`
 
-A reasonable value here is a value that lets all feed clients (if more than one) Sets the number of connections this
-client will use collectively have a number of connections which is a small multiple of the numbers of containers in the
-cluster to feed, so load can be balanced across these containers. In general, this value should be kept as low as
-possible, but poor connectivity between feeder and cluster may also warrant a higher number of connections.
+The number of connections the feed client uses to each endpoint. A reasonable value lets all feed clients (if more than
+one) collectively have a number of connections which is a small multiple of the number of containers in the cluster to
+feed, so load can be balanced across these containers. In general, this value should be kept as low as possible, but
+poor connectivity between feeder and cluster may also warrant a higher number of connections.
 
 * Type: int
 * Default: 1
@@ -127,10 +139,10 @@ possible, but poor connectivity between feeder and cluster may also warrant a hi
 
 `vespa.max.streams.per.connection`
 
-This determines the maximum number of concurrent, in-flight requests for this. Sets the maximum number of streams per
-HTTP/2 client, which is maxConnections * maxStreamsPerConnection. Prefer more streams to more connections, when
-possible. The feed client automatically throttles load to achieve the best throughput, and the actual number of streams
-per connection is usually lower than the maximum.
+The maximum number of streams per HTTP/2 connection of the feed client. This determines the maximum number of
+concurrent, in-flight requests of the client, which is `vespa.connections.per.endpoint` times this value per endpoint.
+Prefer more streams to more connections, when possible. The feed client automatically throttles load to achieve the best
+throughput, and the actual number of streams per connection is usually lower than the maximum.
 
 * Type: int
 * Default: 16
@@ -146,6 +158,7 @@ Turns on dryrun mode, where each operation succeeds after a given delay, rather 
 * Importance: low
 
 `vespa.speedtest`
+
 Turns on speed test mode, where each operation succeeds immediately, rather than being sent across the network.
 
 * Type: boolean
@@ -176,7 +189,7 @@ specified.
 
 `vespa.document.type`
 
-Document type as defined in services.xml and the schema. Defaults to topic name if not specified
+Document type as defined in services.xml and the schema. Defaults to topic name if not specified.
 
 * Type: string
 * Default: null
@@ -186,8 +199,8 @@ Document type as defined in services.xml and the schema. Defaults to topic name 
 `vespa.operational.mode`
 
 The operational mode of the connector. Valid options are upsert and raw. Upsert mode puts each record as a whole
-document, replacing any existing one, and turns tombstones into removes. Raw mode executes all operations using
-document json format as explained in https://docs.vespa.ai/en/reference/document-json-format.html.
+document, replacing any existing one, and turns tombstones into removes. Raw mode executes all operations using document
+json format as explained in https://docs.vespa.ai/en/reference/document-json-format.html.
 
 * Type: string
 * Default: UPSERT
@@ -214,13 +227,13 @@ Operation types to retry.
 
 `vespa.max.retries`
 
-How many times in a row to retry a batch that failed only because Vespa or the network was unavailable, such as during
-a Vespa upgrade: network errors, timeouts, server errors (5xx) and responses that are not Vespa JSON. Client errors
-(4xx) are not retried, except a 4xx whose body is not Vespa JSON, as from a proxy, since the feed client loses its
-status. Between retries the task pauses its partitions for a random backoff between 0 and
-`vespa.retry.backoff.ms * 2^retry`, also capped by the time left until the next offset commit, then redelivers the
-whole batch. The count resets after every successful batch; once it is exhausted the task fails. These retries come on
-top of the feed client's own immediate retries, `vespa.retry.strategy.retries`.
+How many times in a row to retry a batch that failed only because Vespa or the network was unavailable, such as during a
+Vespa upgrade: network errors, timeouts, server errors (5xx) and responses that are not Vespa JSON. Client errors (4xx)
+are not retried, except a 4xx whose body is not Vespa JSON, as from a proxy, since the feed client loses its status.
+Between retries the task pauses its partitions for a random backoff between 0 and `vespa.retry.backoff.ms * 2^retry`,
+also capped by the time left until the next offset commit, then redelivers the whole batch. The count resets after every
+successful batch; once it is exhausted the task fails. These retries come on top of the feed client's own immediate
+retries, `vespa.retry.strategy.retries`.
 
 * Type: int
 * Default: 10
@@ -264,7 +277,7 @@ Compression to use for request bodies. `AUTO` compresses large request bodies on
 
 * Type: string
 * Default: AUTO
-* Valid Values: (case insensitive) `AUTO`, `NONE`, `GZIP`
+* Valid Values: (case insensitive) [AUTO, GZIP, NONE]
 * Importance: low
 
 `vespa.initial.inflight.factor`
@@ -295,15 +308,6 @@ Additional HTTP headers sent with every request to Vespa, as a comma-separated l
 * Type: list
 * Default: ""
 * Valid Values: comma-separated list of `Name:Value` pairs
-* Importance: low
-
-`vespa.cloud.token`
-
-Vespa Cloud token when using token based authentication. Sent as an `Authorization: Bearer` header and masked in logs.
-
-* Type: password
-* Default: null
-* Valid Values: non-empty string
 * Importance: low
 
 #### Operation
@@ -452,6 +456,8 @@ Additional HTTP headers sent with every request to the proxy, as a comma-separat
 * Default: ""
 * Valid Values: comma-separated list of `Name:Value` pairs
 * Importance: low
+
+<!-- config:end -->
 
 ### Authentication
 

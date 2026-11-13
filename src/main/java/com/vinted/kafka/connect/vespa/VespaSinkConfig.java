@@ -31,7 +31,8 @@ public class VespaSinkConfig extends AbstractConfig {
     // Connector group
     public static final String VESPA_CLOUD_TOKEN_CONFIG = "vespa.cloud.token";
     private static final String VESPA_CLOUD_TOKEN_DEFAULT = null;
-    private static final String VESPA_CLOUD_TOKEN_DOC = "The token to authenticate with Vespa Cloud instances";
+    private static final String VESPA_CLOUD_TOKEN_DOC = "Vespa Cloud token when using token based authentication. "
+            + "Sent as an `Authorization: Bearer` header and masked in logs.";
     private static final String VESPA_CLOUD_TOKEN_DISPLAY = "Vespa cloud token";
 
     public static final String ENDPOINT_CONFIG = "vespa.endpoint";
@@ -42,21 +43,20 @@ public class VespaSinkConfig extends AbstractConfig {
     private static final String ENDPOINT_DEFAULT = "http://localhost:8080";
 
     public static final String CONNECTIONS_PER_ENDPOINT_CONFIG = "vespa.connections.per.endpoint";
-    private static final String CONNECTIONS_PER_ENDPOINT_DOC = "A reasonable value here is a value that lets all feed "
-            + "clients (if more than one) Sets the number of connections this client will use "
-            + "collectively have a number of connections which is a small multiple of the numbers of containers in "
-            + "the cluster to feed, so load can be balanced across these containers. In general, this value should "
-            + "be kept as low as possible, but poor connectivity between feeder and cluster may also warrant a higher "
-            + "number of connections.";
+    private static final String CONNECTIONS_PER_ENDPOINT_DOC = "The number of connections the feed client uses to each "
+            + "endpoint. A reasonable value lets all feed clients (if more than one) collectively have a number of "
+            + "connections which is a small multiple of the number of containers in the cluster to feed, so load can "
+            + "be balanced across these containers. In general, this value should be kept as low as possible, but "
+            + "poor connectivity between feeder and cluster may also warrant a higher number of connections.";
     private static final String CONNECTIONS_PER_ENDPOINT_DISPLAY = "Connections per endpoint";
 
     private static final int CONNECTIONS_PER_ENDPOINT_DEFAULT = 1;
 
     public static final String MAX_STREAMS_PER_CONNECTION_CONFIG = "vespa.max.streams.per.connection";
-    private static final String MAX_STREAMS_PER_CONNECTION_DOC = "This determines the maximum number of concurrent, "
-            + "in-flight requests for this. Sets the maximum number of streams per HTTP/2 "
-            + "client, which is maxConnections * maxStreamsPerConnection. Prefer more streams to more connections, "
-            + "when possible. The feed client automatically throttles load to achieve the best throughput, and the "
+    private static final String MAX_STREAMS_PER_CONNECTION_DOC = "The maximum number of streams per HTTP/2 connection "
+            + "of the feed client. This determines the maximum number of concurrent, in-flight requests of the "
+            + "client, which is `vespa.connections.per.endpoint` times this value per endpoint. Prefer more streams "
+            + "to more connections, when possible. The feed client automatically throttles load to achieve the best throughput, and the "
             + "actual number of streams per connection is usually lower than the maximum.";
     private static final String MAX_STREAMS_PER_CONNECTION_DISPLAY = "Max streams per connection";
     private static final int MAX_STREAMS_PER_CONNECTION_DEFAULT = 16;
@@ -89,7 +89,7 @@ public class VespaSinkConfig extends AbstractConfig {
 
     public static final String DOCUMENT_TYPE_CONFIG = "vespa.document.type";
     private static final String DOCUMENT_TYPE_DOC = "Document type as defined in services.xml and the schema. "
-            + "Defaults to topic name if not specified";
+            + "Defaults to topic name if not specified.";
     private static final String DOCUMENT_TYPE_DISPLAY = "Document type";
     private static final String DOCUMENT_TYPE_DEFAULT = null;
 
@@ -148,7 +148,7 @@ public class VespaSinkConfig extends AbstractConfig {
 
     public static final String COMPRESSION_CONFIG = "vespa.compression";
     private static final String COMPRESSION_DOC = "Compression to use for request bodies. `AUTO` compresses large "
-            + "request bodies only. Valid options are `AUTO`, `NONE` and `GZIP`.";
+            + "request bodies only.";
     private static final String COMPRESSION_DISPLAY = "Compression";
     private static final FeedClientBuilder.Compression COMPRESSION_DEFAULT = FeedClientBuilder.Compression.auto;
 
