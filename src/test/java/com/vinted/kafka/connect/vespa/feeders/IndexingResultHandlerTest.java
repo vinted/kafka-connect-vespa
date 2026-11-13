@@ -2,7 +2,9 @@ package com.vinted.kafka.connect.vespa.feeders;
 
 import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.FeedException;
+import ai.vespa.feed.client.OperationParseException;
 import ai.vespa.feed.client.Result;
+import com.fasterxml.jackson.core.JsonParseException;
 import com.vinted.kafka.connect.vespa.CapturedLogs;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import org.apache.kafka.connect.data.Schema;
@@ -144,9 +146,9 @@ class IndexingResultHandlerTest {
 
     @Test
     void failsRecordInsteadOfHangingWhenErrantRecordReporterThrows() {
-        ConnectException toleranceExceeded = new ConnectException("Tolerance exceeded in error handler");
-        when(reporter.report(any(), any())).thenThrow(toleranceExceeded);
         Throwable failure = new FeedException(ID, "Status 400 executing POST: bad request");
+        ConnectException toleranceExceeded = toleranceExceeded(failure);
+        when(reporter.report(any(), any())).thenThrow(toleranceExceeded);
 
         CompletableFuture<Result> promise = handle("IGNORE", CompletableFuture.failedFuture(failure));
 
@@ -154,6 +156,17 @@ class IndexingResultHandlerTest {
         CompletionException thrown = assertThrows(CompletionException.class, promise::join);
         FeedException cause = assertInstanceOf(FeedException.class, thrown.getCause());
         assertSame(toleranceExceeded, cause.getCause());
+    }
+
+    @Test
+    void failsWithAFatalFailureWhenErrantRecordReporterThrowsOverAnUnparseableDocument() {
+        Throwable unparseable = new OperationParseException("Failed to parse document JSON", new JsonParseException(null, "Unexpected character"));
+        when(reporter.report(any(), any())).thenThrow(toleranceExceeded(unparseable));
+
+        CompletableFuture<Result> promise = handle("IGNORE", CompletableFuture.failedFuture(unparseable));
+
+        CompletionException thrown = assertThrows(CompletionException.class, promise::join);
+        assertEquals(IndexingFailure.FATAL, IndexingFailure.of(thrown.getCause()));
     }
 
     @Test
@@ -170,6 +183,11 @@ class IndexingResultHandlerTest {
         VespaSinkConfig config = new VespaSinkConfig(
                 Map.of(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, behaviorOnMalformedDocs));
         return new IndexingResultHandler(config, reporter).handle(record, future);
+    }
+
+    // As Kafka's RetryWithToleranceOperator throws it under errors.tolerance=none.
+    private static ConnectException toleranceExceeded(Throwable reported) {
+        return new ConnectException("Tolerance exceeded in error handler", reported);
     }
 
     private static String single(List<String> errors) {

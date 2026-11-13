@@ -36,6 +36,11 @@ public enum IndexingFailure {
             return ofBatch(((MultiFeedException) failure).feedExceptions());
         }
 
+        // Its causes include the failure being handled, which may look like a malformed document.
+        if (failure instanceof IndexingResultHandlingException) {
+            return FATAL;
+        }
+
         if (isMalformedDocument(failure)) {
             return MALFORMED_DOCUMENT;
         }
