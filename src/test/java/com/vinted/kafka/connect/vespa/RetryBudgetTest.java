@@ -3,16 +3,32 @@ package com.vinted.kafka.connect.vespa;
 import com.vinted.kafka.connect.vespa.RetryBudget.Decision;
 import com.vinted.kafka.connect.vespa.RetryBudget.Outcome;
 import com.vinted.kafka.connect.vespa.feeders.IndexingFailure;
+import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.errors.DataException;
+import org.apache.kafka.connect.sink.ErrantRecordReporter;
+import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
 import static com.vinted.kafka.connect.vespa.feeders.IndexingFailure.TRANSIENT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 class RetryBudgetTest {
+    private static final DataException ERROR = new DataException("invalid");
+
     private final RetryBudget budget = new RetryBudget(2, 1000);
+    private final ErrantRecordReporter reporter = mock(ErrantRecordReporter.class);
 
     @Test
     void retriesTransientFailuresWithAGrowingBackoff() {
@@ -70,5 +86,75 @@ class RetryBudgetTest {
     @Test
     void retriesAtOnceWithoutBackoff() {
         assertEquals(0, new RetryBudget(2, 0).failed(TRANSIENT).backoffMs);
+    }
+
+    @Test
+    void reportsARecordOnceWhileItsBatchIsRetried() {
+        ErrantRecordReporter reportingOnce = budget.reportingOnce(reporter);
+
+        reportingOnce.report(record("topic", 0, 7), ERROR);
+        budget.failed(TRANSIENT);
+        reportingOnce.report(record("topic", 0, 7), ERROR);
+
+        verify(reporter, times(1)).report(any(), any());
+    }
+
+    @Test
+    void reportsARecordAgainOnceItsBatchSucceeded() {
+        ErrantRecordReporter reportingOnce = budget.reportingOnce(reporter);
+
+        reportingOnce.report(record("topic", 0, 7), ERROR);
+        budget.succeeded();
+        reportingOnce.report(record("topic", 0, 7), ERROR);
+
+        verify(reporter, times(2)).report(any(), any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(IndexingFailure.class)
+    void reportsARecordAgainOnceTheBudgetGivesUp(IndexingFailure failure) {
+        RetryBudget noRetries = new RetryBudget(0, 1000);
+        ErrantRecordReporter reportingOnce = noRetries.reportingOnce(reporter);
+
+        reportingOnce.report(record("topic", 0, 7), ERROR);
+        noRetries.failed(failure);
+        reportingOnce.report(record("topic", 0, 7), ERROR);
+
+        verify(reporter, times(2)).report(any(), any());
+    }
+
+    @Test
+    void tellsRecordsApartByTopicPartitionAndOffset() {
+        ErrantRecordReporter reportingOnce = budget.reportingOnce(reporter);
+
+        reportingOnce.report(record("topic", 0, 7), ERROR);
+        reportingOnce.report(record("other", 0, 7), ERROR);
+        reportingOnce.report(record("topic", 1, 7), ERROR);
+        reportingOnce.report(record("topic", 0, 8), ERROR);
+
+        verify(reporter, times(4)).report(any(), any());
+    }
+
+    @Test
+    void reportsARecordOnceAcrossThreads() throws InterruptedException {
+        ErrantRecordReporter reportingOnce = budget.reportingOnce(reporter);
+        ExecutorService threads = Executors.newFixedThreadPool(8);
+
+        for (int i = 0; i < 64; i++) {
+            threads.execute(() -> reportingOnce.report(record("topic", 0, 7), ERROR));
+        }
+        threads.shutdown();
+
+        assertTrue(threads.awaitTermination(10, TimeUnit.SECONDS));
+        verify(reporter, times(1)).report(any(), any());
+    }
+
+    @Test
+    void hasNoReporterWhenNoneIsConfigured() {
+        assertNull(budget.reportingOnce(null));
+    }
+
+    private static SinkRecord record(String topic, int partition, long offset) {
+        return new SinkRecord(topic, partition, Schema.STRING_SCHEMA, "key", Schema.STRING_SCHEMA, "{}", offset);
     }
 }

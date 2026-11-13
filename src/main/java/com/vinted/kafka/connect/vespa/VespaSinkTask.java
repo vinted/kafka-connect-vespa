@@ -43,7 +43,7 @@ public class VespaSinkTask extends SinkTask {
         this.retryBudget = new RetryBudget(config.maxRetries, config.retryBackoffMs);
         log.info("Using {} operational mode.", config.operationalMode);
 
-        this.feed = VespaFeed.open(config, reporter, clients);
+        this.feed = VespaFeed.open(config, retryBudget.reportingOnce(reporter), clients);
     }
 
     private ErrantRecordReporter errantRecordReporter() {

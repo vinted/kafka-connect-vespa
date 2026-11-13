@@ -1,11 +1,16 @@
 package com.vinted.kafka.connect.vespa;
 
 import com.vinted.kafka.connect.vespa.feeders.IndexingFailure;
+import org.apache.kafka.connect.sink.ErrantRecordReporter;
+import org.apache.kafka.connect.sink.SinkRecord;
 
-/**
- * How many times in a row a batch that failed only with transient failures is redelivered, and how long to wait
- * before each redelivery. Reset after every successful batch.
- */
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+
+/** Redeliveries of a batch that failed transiently, their backoff, and the records already reported meanwhile. */
 final class RetryBudget {
     enum Outcome {
         RETRY,
@@ -28,6 +33,8 @@ final class RetryBudget {
 
     private final int maxRetries;
     private final long initialBackoffMs;
+    // Written from feed client callback threads as well as the task thread.
+    private final Set<List<Object>> reported = ConcurrentHashMap.newKeySet();
     private int attempt;
 
     RetryBudget(int maxRetries, long initialBackoffMs) {
@@ -35,8 +42,19 @@ final class RetryBudget {
         this.initialBackoffMs = initialBackoffMs;
     }
 
+    /** Reports each record once across the redeliveries of its batch; {@code null} when no reporter is configured. */
+    ErrantRecordReporter reportingOnce(ErrantRecordReporter reporter) {
+        if (reporter == null) {
+            return null;
+        }
+
+        return (record, error) -> reported.add(coordinates(record))
+                ? reporter.report(record, error)
+                : CompletableFuture.completedFuture(null);
+    }
+
     void succeeded() {
-        attempt = 0;
+        reset();
     }
 
     /** Spends one retry when the batch failed only transiently and the budget lasts; otherwise resets the budget. */
@@ -54,7 +72,16 @@ final class RetryBudget {
     }
 
     private Decision giveUp(Outcome outcome) {
-        attempt = 0;
+        reset();
         return new Decision(outcome, 0, 0);
+    }
+
+    private void reset() {
+        attempt = 0;
+        reported.clear();
+    }
+
+    private static List<Object> coordinates(SinkRecord record) {
+        return Arrays.asList(record.topic(), record.kafkaPartition(), record.kafkaOffset());
     }
 }
