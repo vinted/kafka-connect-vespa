@@ -4,6 +4,7 @@ import ai.vespa.feed.client.FeedClient;
 import ai.vespa.feed.client.FeedClientBuilder;
 import ai.vespa.feed.client.FeedException;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
+import com.vinted.kafka.connect.vespa.mocks.MockVespaServer;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.GeneralName;
@@ -12,19 +13,12 @@ import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
-import org.eclipse.jetty.alpn.server.ALPNServerConnectionFactory;
 import org.eclipse.jetty.http.HttpHeader;
-import org.eclipse.jetty.http2.server.HTTP2ServerConnectionFactory;
 import org.eclipse.jetty.io.Content;
 import org.eclipse.jetty.io.EndPoint;
 import org.eclipse.jetty.server.Handler;
-import org.eclipse.jetty.server.HttpConfiguration;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Response;
-import org.eclipse.jetty.server.SecureRequestCustomizer;
-import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.server.ServerConnector;
-import org.eclipse.jetty.server.SslConnectionFactory;
 import org.eclipse.jetty.util.Callback;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.junit.jupiter.api.AfterEach;
@@ -67,7 +61,7 @@ public class VespaFeedClientFactoryTest {
 
     private final Map<String, String> params = new HashMap<>();
     private final List<Certificate> presentedClientCertificates = new CopyOnWriteArrayList<>();
-    private Server httpsServer;
+    private MockVespaServer httpsServer;
     private Identity server;
     private Identity client;
 
@@ -150,7 +144,7 @@ public class VespaFeedClientFactoryTest {
     @Test
     void connectsToServerRequiringClientCertificate() throws Exception {
         startMutualTlsServer();
-        params.put("vespa.endpoint", serverUrl());
+        params.put("vespa.endpoint", httpsServer.url());
         params.put("vespa.ssl.certificate.path", writePem("client.pem", client.certificate).toString());
         params.put("vespa.ssl.private.key.path", writePem("client.key", client.keyPair.getPrivate()).toString());
         params.put("vespa.ssl.ca.certificates.path", writePem("ca.pem", server.certificate).toString());
@@ -164,7 +158,7 @@ public class VespaFeedClientFactoryTest {
     @Test
     void isRejectedByServerRequiringClientCertificateWhenNoneConfigured() throws Exception {
         startMutualTlsServer();
-        params.put("vespa.endpoint", serverUrl());
+        params.put("vespa.endpoint", httpsServer.url());
         params.put("vespa.ssl.ca.certificates.path", writePem("ca.pem", server.certificate).toString());
 
         assertThrows(FeedException.class, () -> VespaFeedClientFactory.create(new VespaSinkConfig(params)));
@@ -183,7 +177,7 @@ public class VespaFeedClientFactoryTest {
     @AfterEach
     void stopServer() throws Exception {
         if (httpsServer != null) {
-            httpsServer.stop();
+            httpsServer.close();
         }
     }
 
@@ -212,18 +206,7 @@ public class VespaFeedClientFactoryTest {
         tls.setTrustStore(trustStore);
         tls.setNeedClientAuth(true);
 
-        HttpConfiguration httpConfiguration = new HttpConfiguration();
-        httpConfiguration.addCustomizer(new SecureRequestCustomizer());
-        HTTP2ServerConnectionFactory http2 = new HTTP2ServerConnectionFactory(httpConfiguration);
-        ALPNServerConnectionFactory alpn = new ALPNServerConnectionFactory();
-        alpn.setDefaultProtocol(http2.getProtocol());
-
-        httpsServer = new Server();
-        ServerConnector connector = new ServerConnector(
-                httpsServer, new SslConnectionFactory(tls, alpn.getProtocol()), alpn, http2);
-        connector.setHost("localhost");
-        httpsServer.addConnector(connector);
-        httpsServer.setHandler(new Handler.Abstract() {
+        httpsServer = MockVespaServer.https(tls, new Handler.Abstract() {
             @Override
             public boolean handle(Request request, Response response, Callback callback) {
                 EndPoint.SslSessionData session =
@@ -235,11 +218,6 @@ public class VespaFeedClientFactoryTest {
                 return true;
             }
         });
-        httpsServer.start();
-    }
-
-    private String serverUrl() {
-        return "https://localhost:" + ((ServerConnector) httpsServer.getConnectors()[0]).getLocalPort();
     }
 
     private Path writePem(String fileName, Object object) throws IOException {
