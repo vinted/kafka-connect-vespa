@@ -1,18 +1,24 @@
 package com.vinted.kafka.connect.vespa.converters;
 
+import org.apache.kafka.connect.json.DecimalFormat;
 import org.apache.kafka.connect.json.JsonConverter;
+import org.apache.kafka.connect.json.JsonConverterConfig;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.storage.Converter;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
+import java.util.Map;
 
 public class ValueConverter {
     private static final Converter JSON_CONVERTER;
 
     static {
         JSON_CONVERTER = new JsonConverter();
-        JSON_CONVERTER.configure(Collections.singletonMap("schemas.enable", "false"), false);
+        // Decimals default to base64 of their unscaled bytes, which no Vespa field type can read. As plain JSON
+        // numbers, Vespa parses them according to the field type, double or string, without losing digits.
+        JSON_CONVERTER.configure(Map.of(
+                JsonConverterConfig.SCHEMAS_ENABLE_CONFIG, "false",
+                JsonConverterConfig.DECIMAL_FORMAT_CONFIG, DecimalFormat.NUMERIC.name()), false);
     }
 
     public String convert(SinkRecord record) {
