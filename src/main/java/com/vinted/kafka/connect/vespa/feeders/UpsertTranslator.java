@@ -7,6 +7,7 @@ import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentOperation;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.Put;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.Remove;
 import org.apache.kafka.connect.errors.DataException;
+import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 
 import java.util.LinkedHashMap;
@@ -18,19 +19,20 @@ import java.util.Optional;
  * UPSERT: the record key is the document id, within the configured or topic namespace and document type. The value
  * is put as the document's fields; a tombstone removes the document, and an empty value is an invalid message.
  */
-final class UpsertTranslator implements RecordTranslator<DocumentOperation> {
+final class UpsertTranslator extends RecordTranslator<DocumentOperation> {
     private final VespaSinkConfig config;
     private final OperationParameters putParameters;
     private final OperationParameters removeParameters;
 
-    UpsertTranslator(VespaSinkConfig config) {
+    UpsertTranslator(VespaSinkConfig config, ErrantRecordReporter reporter) {
+        super(config, reporter);
         this.config = config;
         this.putParameters = config.putParameters();
         this.removeParameters = config.removeParameters();
     }
 
     @Override
-    public Optional<DocumentOperation> translate(SinkRecord record) {
+    Optional<DocumentOperation> translate(SinkRecord record) {
         String key = KeyConverter.convert(record);
         String value = ValueConverter.convert(record);
         String topic = record.topic();
@@ -49,7 +51,7 @@ final class UpsertTranslator implements RecordTranslator<DocumentOperation> {
 
     /** Keeps only the last operation per document. */
     @Override
-    public List<DocumentOperation> compact(List<DocumentOperation> operations) {
+    List<DocumentOperation> compact(List<DocumentOperation> operations) {
         Map<DocumentId, DocumentOperation> latest = new LinkedHashMap<>();
         operations.forEach(operation -> latest.put(operation.documentId, operation));
         return List.copyOf(latest.values());
