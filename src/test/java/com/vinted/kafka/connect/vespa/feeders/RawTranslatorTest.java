@@ -7,6 +7,8 @@ import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Duration;
 import java.util.HashMap;
@@ -55,6 +57,12 @@ class RawTranslatorTest {
                 .route("custom")
                 .tracelevel(3);
         assertEquals(expected, operation.parameters);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", " \n\t "})
+    void rejectsAnEmptyValueAsAnInvalidMessage(String value) {
+        assertThrows(DataException.class, () -> translator().translate(record(value)));
     }
 
     @Test

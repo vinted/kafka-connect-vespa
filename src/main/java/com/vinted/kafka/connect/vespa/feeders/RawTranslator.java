@@ -4,6 +4,7 @@ import ai.vespa.feed.client.OperationParameters;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.converters.ValueConverter;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentJson;
+import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,7 +33,13 @@ final class RawTranslator implements RecordTranslator<DocumentJson> {
             return Optional.empty();
         }
 
-        return Optional.of(new DocumentJson(record, valueConverter.convert(record), parameters));
+        String json = valueConverter.convert(record);
+
+        if (json.isBlank()) {
+            throw new DataException("Value is empty; it must be a Vespa document operation.");
+        }
+
+        return Optional.of(new DocumentJson(record, json, parameters));
     }
 
     /** Sends every operation, as an update can depend on an earlier operation on the same document. */
