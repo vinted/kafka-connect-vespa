@@ -90,24 +90,34 @@ public class VespaSinkTask extends SinkTask {
             feeder().feed(collection);
             retryAttempt = 0;
         } catch (Exception e) {
-            if (TransientFailures.isTransient(e) && retryAttempt < config.maxRetries) {
-                retryAttempt++;
-                long backoffMs = Backoff.randomBackoffMs(retryAttempt, config.retryBackoffMs);
-                log.warn("Vespa is unavailable, retrying {} records in {} ms (retry {} of {}).",
-                        collection.size(), backoffMs, retryAttempt, config.maxRetries, e);
-                context.timeout(backoffMs);
-                throw new RetriableException(e);
-            }
-
-            if (TransientFailures.isTransient(e)) {
-                log.error("Vespa is still unavailable after {} retries. To wait longer, increase '{}' or '{}'.",
-                        config.maxRetries, VespaSinkConfig.MAX_RETRIES_CONFIG,
-                        VespaSinkConfig.RETRY_BACKOFF_MS_CONFIG, e);
-            } else {
-                log.error("Error feeding records to Vespa.", e);
-            }
-            throw new ConnectException(e);
+            throw failure(e, collection.size());
         }
+    }
+
+    /**
+     * Returns a {@link RetriableException} for a transient failure while the retry budget lasts, after asking Connect
+     * to back off; otherwise a {@link ConnectException} that fails the task.
+     */
+    private ConnectException failure(Exception e, int records) {
+        boolean isTransient = TransientFailures.isTransient(e);
+
+        if (isTransient && retryAttempt < config.maxRetries) {
+            retryAttempt++;
+            long backoffMs = Backoff.randomBackoffMs(retryAttempt, config.retryBackoffMs);
+            log.warn("Vespa is unavailable, retrying {} records in {} ms (retry {} of {}).",
+                    records, backoffMs, retryAttempt, config.maxRetries, e);
+            context.timeout(backoffMs);
+            return new RetriableException(e);
+        }
+
+        if (isTransient) {
+            log.error("Vespa is still unavailable after {} retries. To wait longer, increase '{}' or '{}'.",
+                    config.maxRetries, VespaSinkConfig.MAX_RETRIES_CONFIG, VespaSinkConfig.RETRY_BACKOFF_MS_CONFIG, e);
+            return new ConnectException(e);
+        }
+
+        log.error("Error feeding records to Vespa.", e);
+        return new ConnectException(e);
     }
 
     @Override
@@ -138,22 +148,27 @@ public class VespaSinkTask extends SinkTask {
      * opens, the client fails every operation with "Operation aborted" and cannot recover.
      */
     private VespaFeeder feeder() {
-        if (feeder != null && client.circuitBreakerState() == OPEN) {
+        if (feeder != null && client.circuitBreakerState() != OPEN) {
+            return feeder;
+        }
+
+        if (feeder != null) {
             log.warn("Vespa feed client circuit breaker is open, recreating the feed client.");
-            try {
-                feeder.close();
-            } catch (Exception e) {
-                log.warn("Error closing the Vespa feeder.", e);
-            }
+            closeQuietly(feeder);
             feeder = null;
         }
 
-        if (feeder == null) {
-            client = clientFactory.apply(config);
-            feeder = createFeeder(client);
-        }
-
+        client = clientFactory.apply(config);
+        feeder = createFeeder(client);
         return feeder;
+    }
+
+    private static void closeQuietly(VespaFeeder feeder) {
+        try {
+            feeder.close();
+        } catch (Exception e) {
+            log.warn("Error closing the Vespa feeder.", e);
+        }
     }
 
     private VespaFeeder createFeeder(FeedClient client) {

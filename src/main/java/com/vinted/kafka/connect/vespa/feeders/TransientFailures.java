@@ -8,9 +8,11 @@ import ai.vespa.feed.client.ResultParseException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 
 import java.io.IOException;
+import java.util.Objects;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * Recognises transient failures: Vespa or the network being unavailable, rather than anything wrong with the
@@ -51,19 +53,11 @@ public final class TransientFailures {
         String message = String.valueOf(failure.getMessage());
 
         // The client's circuit breaker opened, or the server rejected the handshake without a status code.
-        if (message.contains("Operation aborted")
+        return message.contains("Operation aborted")
                 || message.contains("non-OK to handshake")
-                || SERVER_ERROR.matcher(message).find()) {
-            return true;
-        }
-
-        for (Throwable cause = failure.getCause(); cause != null; cause = cause.getCause()) {
-            if (isNetworkFailure(cause)) {
-                return true;
-            }
-        }
-
-        return false;
+                || SERVER_ERROR.matcher(message).find()
+                || Stream.iterate(failure.getCause(), Objects::nonNull, Throwable::getCause)
+                        .anyMatch(TransientFailures::isNetworkFailure);
     }
 
     /**
