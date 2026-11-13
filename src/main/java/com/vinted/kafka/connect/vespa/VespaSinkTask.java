@@ -97,7 +97,9 @@ public class VespaSinkTask extends SinkTask {
                 return e;
             case NOT_TRANSIENT:
             default:
-                log.error("Error feeding records to Vespa.", e.getCause());
+                // Each record's failure is logged where it is handled, and Connect logs the exception thrown here.
+                log.error("Failing the task after a {} failure feeding {} records to Vespa: {}",
+                        e.failure(), records, e.getCause().toString());
                 return e;
         }
     }

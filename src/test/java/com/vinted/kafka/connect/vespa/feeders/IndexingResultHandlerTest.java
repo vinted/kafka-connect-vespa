@@ -2,7 +2,10 @@ package com.vinted.kafka.connect.vespa.feeders;
 
 import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.FeedException;
+import ai.vespa.feed.client.OperationParseException;
 import ai.vespa.feed.client.Result;
+import com.fasterxml.jackson.core.JsonParseException;
+import com.vinted.kafka.connect.vespa.CapturedLogs;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -13,6 +16,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -21,6 +25,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
@@ -52,6 +57,33 @@ class IndexingResultHandlerTest {
         CompletionException thrown = assertThrows(CompletionException.class, promise::join);
         assertSame(failure, thrown.getCause());
         verify(reporter, never()).report(any(), any());
+    }
+
+    @Test
+    void logsFatalFailuresWithoutAdviceThatCannotHelpThem() {
+        Throwable failure = new FeedException(ID, "Status 401 executing 'POST /document/v1/': unauthorized");
+
+        try (CapturedLogs logs = CapturedLogs.capture()) {
+            handle("FAIL", CompletableFuture.failedFuture(failure));
+
+            String error = single(logs.errors());
+            assertTrue(error.contains("topic=topic partition=0 offset=7"), error);
+            assertTrue(error.contains("Status 401"), error);
+            assertFalse(error.contains(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG), error);
+        }
+    }
+
+    @Test
+    void advisesIgnoringMalformedDocumentsThatFail() {
+        Throwable failure = new FeedException(ID, "Status 400 executing 'POST /document/v1/': bad request");
+
+        try (CapturedLogs logs = CapturedLogs.capture()) {
+            handle("FAIL", CompletableFuture.failedFuture(failure));
+
+            String error = single(logs.errors());
+            assertTrue(error.contains("topic=topic partition=0 offset=7"), error);
+            assertTrue(error.contains(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG), error);
+        }
     }
 
     @Test
@@ -114,9 +146,9 @@ class IndexingResultHandlerTest {
 
     @Test
     void failsRecordInsteadOfHangingWhenErrantRecordReporterThrows() {
-        ConnectException toleranceExceeded = new ConnectException("Tolerance exceeded in error handler");
-        when(reporter.report(any(), any())).thenThrow(toleranceExceeded);
         Throwable failure = new FeedException(ID, "Status 400 executing POST: bad request");
+        ConnectException toleranceExceeded = toleranceExceeded(failure);
+        when(reporter.report(any(), any())).thenThrow(toleranceExceeded);
 
         CompletableFuture<Result> promise = handle("IGNORE", CompletableFuture.failedFuture(failure));
 
@@ -124,6 +156,32 @@ class IndexingResultHandlerTest {
         CompletionException thrown = assertThrows(CompletionException.class, promise::join);
         FeedException cause = assertInstanceOf(FeedException.class, thrown.getCause());
         assertSame(toleranceExceeded, cause.getCause());
+    }
+
+    @Test
+    void failsWithAFatalFailureWhenErrantRecordReporterThrowsOverAnUnparseableDocument() {
+        Throwable unparseable = new OperationParseException("Failed to parse document JSON", new JsonParseException(null, "Unexpected character"));
+        when(reporter.report(any(), any())).thenThrow(toleranceExceeded(unparseable));
+
+        CompletableFuture<Result> promise = handle("IGNORE", CompletableFuture.failedFuture(unparseable));
+
+        CompletionException thrown = assertThrows(CompletionException.class, promise::join);
+        assertEquals(IndexingFailure.FATAL, IndexingFailure.of(thrown.getCause()));
+    }
+
+    @Test
+    void logsAFailureToHandleTheIndexingResultWithItsCause() {
+        Throwable failure = new FeedException(ID, "Status 400 executing POST: bad request");
+        when(reporter.report(any(), any())).thenThrow(toleranceExceeded(failure));
+
+        try (CapturedLogs logs = CapturedLogs.capture()) {
+            handle("IGNORE", CompletableFuture.failedFuture(failure));
+
+            String error = single(logs.errors());
+            assertTrue(error.contains("topic=topic partition=0 offset=7"), error);
+            assertTrue(error.contains("Tolerance exceeded in error handler"), error);
+            assertFalse(error.contains(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG), error);
+        }
     }
 
     @Test
@@ -140,6 +198,16 @@ class IndexingResultHandlerTest {
         VespaSinkConfig config = new VespaSinkConfig(
                 Map.of(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, behaviorOnMalformedDocs));
         return new IndexingResultHandler(config, reporter).handle(record, future);
+    }
+
+    // As Kafka's RetryWithToleranceOperator throws it under errors.tolerance=none.
+    private static ConnectException toleranceExceeded(Throwable reported) {
+        return new ConnectException("Tolerance exceeded in error handler", reported);
+    }
+
+    private static String single(List<String> errors) {
+        assertEquals(1, errors.size(), String.join("\n", errors));
+        return errors.get(0);
     }
 
     private static Result result(Result.Type type) {
