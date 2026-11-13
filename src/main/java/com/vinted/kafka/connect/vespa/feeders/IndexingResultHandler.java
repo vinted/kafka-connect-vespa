@@ -44,19 +44,7 @@ public class IndexingResultHandler {
 
         future.whenComplete((result, throwable) -> {
             try {
-                if (result == null) {
-                    if (isMalformed(throwable)) {
-                        skipOrFail(record, throwable, ignoredResult(), promise);
-                    } else {
-                        log.error(errorMessage(record), throwable);
-                        promise.completeExceptionally(asFeedException(throwable));
-                    }
-                } else if (result.type() == Result.Type.success) {
-                    promise.complete(result);
-                } else {
-                    // Vespa rejected the operation, i.e. its test-and-set condition was not met.
-                    skipOrFail(record, new FeedException(result.documentId(), result.toString()), result, promise);
-                }
+                complete(record, result, throwable, promise);
             } catch (Throwable t) {
                 // whenComplete swallows anything thrown here, which would leave the promise, and FeedClient.await,
                 // waiting forever. The errant record reporter throws "Tolerance exceeded" under errors.tolerance=none.
@@ -66,6 +54,32 @@ public class IndexingResultHandler {
         });
 
         return promise;
+    }
+
+    private void complete(SinkRecord record, Result result, Throwable throwable, CompletableFuture<Result> promise) {
+        if (result != null && result.type() == Result.Type.success) {
+            promise.complete(result);
+            return;
+        }
+
+        if (result != null) {
+            // Vespa rejected the operation, i.e. its test-and-set condition was not met.
+            skipOrFail(record, new FeedException(result.documentId(), result.toString()), result, promise);
+            return;
+        }
+
+        if (isMalformed(throwable)) {
+            skipOrFail(record, throwable, ignoredResult(), promise);
+            return;
+        }
+
+        if (TransientFailures.isTransient(throwable)) {
+            // The task retries the batch and logs it once.
+            log.debug("Failed to index {}.", Records.describe(record), throwable);
+        } else {
+            log.error(errorMessage(record), throwable);
+        }
+        promise.completeExceptionally(asFeedException(throwable));
     }
 
     private void skipOrFail(SinkRecord record, Throwable cause, Result skipped, CompletableFuture<Result> promise) {

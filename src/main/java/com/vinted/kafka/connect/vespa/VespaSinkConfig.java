@@ -104,6 +104,25 @@ public class VespaSinkConfig extends AbstractConfig {
     private static final String RETRY_STRATEGY_RETRIES_DISPLAY = "Max Retries";
     private static final int RETRY_STRATEGY_RETRIES_DEFAULT = 10;
 
+    public static final String MAX_RETRIES_CONFIG = "vespa.max.retries";
+    private static final String MAX_RETRIES_DOC = "How many times in a row to retry a batch that failed only because "
+            + "Vespa or the network was unavailable, such as during a Vespa upgrade: network errors, timeouts, server "
+            + "errors (5xx) and responses that are not Vespa JSON. Client errors (4xx) are never retried. Between "
+            + "retries the task pauses its partitions for a random backoff between 0 and "
+            + "`vespa.retry.backoff.ms * 2^retry`, also capped by the time left until the next offset commit, then "
+            + "redelivers the whole batch. The count resets after every successful batch; once it is exhausted the "
+            + "task fails. These retries come on top of the feed client's own immediate retries, "
+            + "`vespa.retry.strategy.retries`.";
+    private static final String MAX_RETRIES_DISPLAY = "Max retries";
+    private static final int MAX_RETRIES_DEFAULT = 10;
+
+    public static final String RETRY_BACKOFF_MS_CONFIG = "vespa.retry.backoff.ms";
+    private static final String RETRY_BACKOFF_MS_DOC = "Initial backoff before retrying a batch after Vespa or the "
+            + "network was unavailable. Each retry waits a random time between 0 and twice the previous upper bound. "
+            + "See `vespa.max.retries`.";
+    private static final String RETRY_BACKOFF_MS_DISPLAY = "Retry backoff ms";
+    private static final long RETRY_BACKOFF_MS_DEFAULT = 1000L;
+
     public static final String CIRCUIT_BREAKER_GRACE_PERIOD_MS_CONFIG = "vespa.circuit.breaker.grace.period.ms";
     private static final String CIRCUIT_BREAKER_GRACE_PERIOD_MS_DOC = "The period of consecutive failures before the "
             + "circuit breaker changes state to half-open, during which the feed client sends only a single request "
@@ -424,6 +443,28 @@ public class VespaSinkConfig extends AbstractConfig {
                         ConfigDef.Width.SHORT,
                         RETRY_STRATEGY_OPERATION_TYPES_DISPLAY)
                 .define(
+                        MAX_RETRIES_CONFIG,
+                        ConfigDef.Type.INT,
+                        MAX_RETRIES_DEFAULT,
+                        atLeast(0),
+                        ConfigDef.Importance.MEDIUM,
+                        MAX_RETRIES_DOC,
+                        CONNECTOR_GROUP,
+                        ++order,
+                        ConfigDef.Width.SHORT,
+                        MAX_RETRIES_DISPLAY)
+                .define(
+                        RETRY_BACKOFF_MS_CONFIG,
+                        ConfigDef.Type.LONG,
+                        RETRY_BACKOFF_MS_DEFAULT,
+                        atLeast(0),
+                        ConfigDef.Importance.MEDIUM,
+                        RETRY_BACKOFF_MS_DOC,
+                        CONNECTOR_GROUP,
+                        ++order,
+                        ConfigDef.Width.SHORT,
+                        RETRY_BACKOFF_MS_DISPLAY)
+                .define(
                         CIRCUIT_BREAKER_GRACE_PERIOD_MS_CONFIG,
                         ConfigDef.Type.LONG,
                         CIRCUIT_BREAKER_GRACE_PERIOD_MS_DEFAULT,
@@ -674,6 +715,8 @@ public class VespaSinkConfig extends AbstractConfig {
     }
 
     public final int retryStrategyRetries;
+    public final int maxRetries;
+    public final long retryBackoffMs;
     public final List<FeedClient.OperationType> retryStrategyOperationsTypes;
     public final int connectionsPerEndpoint;
     public final int maxStreamsPerConnection;
@@ -711,6 +754,8 @@ public class VespaSinkConfig extends AbstractConfig {
         super(CONFIG, configProviderProps);
 
         this.retryStrategyRetries = getInt(RETRY_STRATEGY_RETRIES_CONFIG);
+        this.maxRetries = getInt(MAX_RETRIES_CONFIG);
+        this.retryBackoffMs = getLong(RETRY_BACKOFF_MS_CONFIG);
         this.retryStrategyOperationsTypes = ConfigUtils.getEnums(FeedClient.OperationType.class, this, RETRY_STRATEGY_OPERATION_TYPES_CONFIG);
         this.connectionsPerEndpoint = getInt(CONNECTIONS_PER_ENDPOINT_CONFIG);
         this.maxStreamsPerConnection = getInt(MAX_STREAMS_PER_CONNECTION_CONFIG);
