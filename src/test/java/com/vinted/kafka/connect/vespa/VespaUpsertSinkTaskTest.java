@@ -7,8 +7,12 @@ import com.google.common.base.Strings;
 import com.vinted.kafka.connect.vespa.mocks.MockVespaFeedClient;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
+import org.apache.kafka.connect.errors.DataException;
+import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
+import org.apache.kafka.connect.sink.SinkTaskContext;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -19,6 +23,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 public class VespaUpsertSinkTaskTest {
     private long offset = 1;
@@ -26,6 +37,14 @@ public class VespaUpsertSinkTaskTest {
     private final MockVespaFeedClient client = new MockVespaFeedClient();
     private final VespaSinkTask task = new VespaSinkTask();
     private final String topic = UUID.randomUUID().toString();
+    private final SinkTaskContext context = mock(SinkTaskContext.class);
+    private final ErrantRecordReporter reporter = mock(ErrantRecordReporter.class);
+
+    @BeforeEach
+    void before() {
+        when(context.errantRecordReporter()).thenReturn(reporter);
+        task.initialize(context);
+    }
 
     @AfterEach
     void after() {
@@ -117,6 +136,68 @@ public class VespaUpsertSinkTaskTest {
 
         assertTimeoutPreemptively(Duration.ofSeconds(10), () ->
                 task.put(List.of(record("set1", "{\"field\":\"value1\"}"))));
+    }
+
+    @Test
+    void reportsAndDropsInvalidMessagesWhenConfigured() {
+        params.put(VespaSinkConfig.DROP_INVALID_MESSAGE_CONFIG, "true");
+        SinkRecord invalid = record(null, "{\"field\":\"value1\"}");
+
+        task.start(params, client);
+        task.put(Arrays.asList(invalid, record("set1", "{\"field\":\"value1\"}")));
+
+        verify(reporter).report(eq(invalid), any(DataException.class));
+        client.assertAllDocumentIds(String.format("id:%s:%s::set1", topic, topic));
+    }
+
+    @Test
+    void reportsAndFailsOnInvalidMessagesByDefault() {
+        SinkRecord invalid = record(null, "{\"field\":\"value1\"}");
+
+        task.start(params, client);
+
+        assertThrows(ConnectException.class, () -> task.put(List.of(invalid)));
+        verify(reporter).report(eq(invalid), any(DataException.class));
+        client.assertAllDocumentIds();
+    }
+
+    @Test
+    void reportsRejectedResults() {
+        client.resultType = Result.Type.conditionNotMet;
+        params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
+        SinkRecord rejected = record("set1", "{\"field\":\"value1\"}");
+
+        task.start(params, client);
+        task.put(List.of(rejected));
+
+        verify(reporter).report(eq(rejected), any());
+    }
+
+    @Test
+    void doesNotReportSuccessfulRecords() {
+        task.start(params, client);
+        task.put(List.of(record("set1", "{\"field\":\"value1\"}")));
+
+        verify(reporter, never()).report(any(), any());
+    }
+
+    @Test
+    void feedsWithoutErrantRecordReporter() {
+        when(context.errantRecordReporter()).thenReturn(null);
+
+        task.start(params, client);
+        task.put(List.of(record("set1", "{\"field\":\"value1\"}")));
+
+        client.assertAllDocumentIds(String.format("id:%s:%s::set1", topic, topic));
+    }
+
+    @Test
+    void startsOnRuntimesWithoutErrantRecordReporter() {
+        doThrow(new NoSuchMethodError()).when(context).errantRecordReporter();
+        task.start(params, client);
+
+        doThrow(new NoClassDefFoundError()).when(context).errantRecordReporter();
+        task.start(params, client);
     }
 
     @Test
