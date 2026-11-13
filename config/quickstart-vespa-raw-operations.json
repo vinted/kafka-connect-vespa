@@ -6,7 +6,7 @@
     "topics": "music",
     "key.converter": "org.apache.kafka.connect.storage.StringConverter",
     "value.converter": "org.apache.kafka.connect.storage.StringConverter",
-    "vespa.url": "http://vespa:8080/",
+    "vespa.endpoint": "http://vespa:8080/",
     "vespa.operational.mode": "raw"
   }
 }
