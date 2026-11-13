@@ -2,13 +2,17 @@ package com.vinted.kafka.connect.vespa;
 
 import ai.vespa.feed.client.FeedClient;
 import ai.vespa.feed.client.FeedClientBuilder;
+import ai.vespa.feed.client.OperationParameters;
+import ai.vespa.feed.client.impl.GracePeriodCircuitBreaker;
 import com.github.jcustenborder.kafka.connect.utils.config.ConfigUtils;
 import com.github.jcustenborder.kafka.connect.utils.config.validators.Validators;
+import com.google.common.base.Strings;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.config.types.Password;
 
+import javax.net.ssl.HostnameVerifier;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
@@ -20,12 +24,15 @@ import java.util.stream.Collectors;
 import static org.apache.kafka.common.config.ConfigDef.Range.atLeast;
 import static org.apache.kafka.common.config.ConfigDef.Range.between;
 
+/** The connector's settings, and the feed client, operation parameters and policies they configure. */
 public class VespaSinkConfig extends AbstractConfig {
+    private static final HostnameVerifier NO_HOSTNAME_VERIFICATION = (hostname, session) -> true;
+
     // Connector group
     public static final String VESPA_CLOUD_TOKEN_CONFIG = "vespa.cloud.token";
-    public static final String VESPA_CLOUD_TOKEN_DEFAULT = null;
-    public static final String VESPA_CLOUD_TOKEN_DOC = "The token to authenticate with Vespa Cloud instances";
-    public static final String VESPA_CLOUD_TOKEN_DISPLAY = "Vespa cloud token";
+    private static final String VESPA_CLOUD_TOKEN_DEFAULT = null;
+    private static final String VESPA_CLOUD_TOKEN_DOC = "The token to authenticate with Vespa Cloud instances";
+    private static final String VESPA_CLOUD_TOKEN_DISPLAY = "Vespa cloud token";
 
     public static final String ENDPOINT_CONFIG = "vespa.endpoint";
     private static final String ENDPOINT_DOC = "The comma-separated list of one or more Vespa URLs, such as "
@@ -717,99 +724,156 @@ public class VespaSinkConfig extends AbstractConfig {
                         BEHAVIOR_ON_MALFORMED_DOCS_DISPLAY);
     }
 
-    public final int retryStrategyRetries;
-    public final int maxRetries;
-    public final long retryBackoffMs;
-    public final List<FeedClient.OperationType> retryStrategyOperationsTypes;
-    public final int connectionsPerEndpoint;
-    public final int maxStreamsPerConnection;
-    public final boolean dryrun;
-    public final boolean speedTest;
-    public final Duration maxFailureDuration;
-    public final String namespace;
-    public final String documentType;
-    public final String route;
-    public final Duration timeout;
-    public final int tracelevel;
-    public final Set<URI> urls;
-    public final boolean dropInvalidMessage;
-    public final BehaviorOnMalformedDoc behaviorOnMalformedDoc;
-    public final OperationalMode operationalMode;
-    public final String vespaCloudToken;
-    public final Duration circuitBreakerGracePeriod;
-    public final Duration connectionTtl;
-    public final FeedClientBuilder.Compression compression;
-    public final int initialInflightFactor;
-    public final boolean benchmark;
-    public final Map<String, String> requestHeaders;
-    public final Path sslCertificatePath;
-    public final Path sslPrivateKeyPath;
-    public final Path sslCaCertificatesPath;
-    public final boolean sslHostnameVerificationEnabled;
-    public final URI proxyUrl;
-    public final Path proxyCaCertificatesPath;
-    public final boolean proxyHostnameVerificationEnabled;
-    public final Map<String, String> proxyRequestHeaders;
-    public final String condition;
-    public final boolean createIfNonExistent;
-
     public VespaSinkConfig(Map<String, ?> configProviderProps) {
         super(CONFIG, configProviderProps);
 
-        this.retryStrategyRetries = getInt(RETRY_STRATEGY_RETRIES_CONFIG);
-        this.maxRetries = getInt(MAX_RETRIES_CONFIG);
-        this.retryBackoffMs = getLong(RETRY_BACKOFF_MS_CONFIG);
-        this.retryStrategyOperationsTypes = ConfigUtils.getEnums(FeedClient.OperationType.class, this, RETRY_STRATEGY_OPERATION_TYPES_CONFIG);
-        this.connectionsPerEndpoint = getInt(CONNECTIONS_PER_ENDPOINT_CONFIG);
-        this.maxStreamsPerConnection = getInt(MAX_STREAMS_PER_CONNECTION_CONFIG);
-        this.dryrun = getBoolean(DRYRUN_CONFIG);
-        this.speedTest = getBoolean(SPEED_TEST_CONFIG);
-        this.maxFailureDuration = Duration.ofMillis(getInt(MAX_FAILURE_MS_CONFIG));
-        this.namespace = getString(NAMESPACE_CONFIG);
-        this.documentType = getString(DOCUMENT_TYPE_CONFIG);
-        this.route = getString(OPERATION_ROUTE_CONFIG);
-        this.timeout = Duration.ofMillis(getInt(OPERATION_TIMEOUT_MS_CONFIG));
-        this.tracelevel = getInt(OPERATION_TRACELEVEL_CONFIG);
-        Password token = getPassword(VESPA_CLOUD_TOKEN_CONFIG);
-        this.vespaCloudToken = token == null ? null : token.value();
-        this.urls = getList(ENDPOINT_CONFIG)
-                .stream()
-                .map(s -> s.endsWith("/") ? s : s + "/")
-                .map(URI::create)
-                .collect(Collectors.toCollection(HashSet::new));
-        this.dropInvalidMessage = getBoolean(DROP_INVALID_MESSAGE_CONFIG);
-        this.behaviorOnMalformedDoc = ConfigUtils.getEnum(BehaviorOnMalformedDoc.class, this, BEHAVIOR_ON_MALFORMED_DOCS_CONFIG);
-        this.operationalMode = ConfigUtils.getEnum(OperationalMode.class, this, OPERATIONAL_MODE_CONFIG);
-        this.circuitBreakerGracePeriod = Duration.ofMillis(getLong(CIRCUIT_BREAKER_GRACE_PERIOD_MS_CONFIG));
-        this.connectionTtl = Duration.ofMillis(getLong(CONNECTION_TTL_MS_CONFIG));
-        this.compression = FeedClientBuilder.Compression.valueOf(getString(COMPRESSION_CONFIG).toLowerCase(Locale.ROOT));
-        this.initialInflightFactor = getInt(INITIAL_INFLIGHT_FACTOR_CONFIG);
-        this.benchmark = getBoolean(BENCHMARK_CONFIG);
-        this.requestHeaders = parseHeaders(REQUEST_HEADERS_CONFIG, getList(REQUEST_HEADERS_CONFIG));
-        this.sslCertificatePath = getPath(SSL_CERTIFICATE_PATH_CONFIG);
-        this.sslPrivateKeyPath = getPath(SSL_PRIVATE_KEY_PATH_CONFIG);
-        this.sslCaCertificatesPath = getPath(SSL_CA_CERTIFICATES_PATH_CONFIG);
-        this.sslHostnameVerificationEnabled = getBoolean(SSL_HOSTNAME_VERIFICATION_ENABLED_CONFIG);
-        String proxy = getString(PROXY_URL_CONFIG);
-        this.proxyUrl = proxy == null ? null : URI.create(proxy);
-        this.proxyCaCertificatesPath = getPath(PROXY_CA_CERTIFICATES_PATH_CONFIG);
-        this.proxyHostnameVerificationEnabled = getBoolean(PROXY_HOSTNAME_VERIFICATION_ENABLED_CONFIG);
-        this.proxyRequestHeaders = parseHeaders(PROXY_REQUEST_HEADERS_CONFIG, getList(PROXY_REQUEST_HEADERS_CONFIG));
-        this.condition = getString(OPERATION_CONDITION_CONFIG);
-        this.createIfNonExistent = getBoolean(OPERATION_CREATE_IF_NON_EXISTENT_CONFIG);
-
-        if ((sslCertificatePath == null) != (sslPrivateKeyPath == null)) {
+        if (path(SSL_CERTIFICATE_PATH_CONFIG).isPresent() != path(SSL_PRIVATE_KEY_PATH_CONFIG).isPresent()) {
             throw new ConfigException(String.format("'%s' and '%s' must be set together.",
                     SSL_CERTIFICATE_PATH_CONFIG, SSL_PRIVATE_KEY_PATH_CONFIG));
         }
     }
 
-    private Path getPath(String key) {
-        String value = getString(key);
-        return value == null ? null : Paths.get(value);
+    /** Builds a feed client for the configured endpoints with every feed client option applied. */
+    public FeedClient feedClient() {
+        return configure(FeedClientBuilder.create(endpoints())).build();
     }
 
-    static Map<String, String> parseHeaders(String name, List<?> entries) {
+    FeedClientBuilder configure(FeedClientBuilder builder) {
+        builder.setConnectionsPerEndpoint(getInt(CONNECTIONS_PER_ENDPOINT_CONFIG));
+        builder.setMaxStreamPerConnection(getInt(MAX_STREAMS_PER_CONNECTION_CONFIG));
+        builder.setConnectionTimeToLive(Duration.ofMillis(getLong(CONNECTION_TTL_MS_CONFIG)));
+        builder.setDryrun(getBoolean(DRYRUN_CONFIG));
+        builder.setSpeedTest(getBoolean(SPEED_TEST_CONFIG));
+        builder.setCompression(FeedClientBuilder.Compression.valueOf(getString(COMPRESSION_CONFIG).toLowerCase(Locale.ROOT)));
+        builder.setInitialInflightFactor(getInt(INITIAL_INFLIGHT_FACTOR_CONFIG));
+        builder.setCircuitBreaker(new GracePeriodCircuitBreaker(
+                Duration.ofMillis(getLong(CIRCUIT_BREAKER_GRACE_PERIOD_MS_CONFIG)),
+                Duration.ofMillis(getInt(MAX_FAILURE_MS_CONFIG))));
+        builder.setRetryStrategy(retryStrategy());
+
+        if (!getBoolean(BENCHMARK_CONFIG)) {
+            builder.noBenchmarking();
+        }
+
+        headers(REQUEST_HEADERS_CONFIG).forEach(builder::addRequestHeader);
+        Optional.ofNullable(getPassword(VESPA_CLOUD_TOKEN_CONFIG))
+                .ifPresent(token -> builder.addRequestHeader("Authorization", "Bearer " + token.value()));
+        path(SSL_CERTIFICATE_PATH_CONFIG).ifPresent(certificate ->
+                builder.setCertificate(certificate, path(SSL_PRIVATE_KEY_PATH_CONFIG).orElseThrow()));
+        path(SSL_CA_CERTIFICATES_PATH_CONFIG).ifPresent(builder::setCaCertificatesFile);
+
+        if (!getBoolean(SSL_HOSTNAME_VERIFICATION_ENABLED_CONFIG)) {
+            builder.setHostnameVerifier(NO_HOSTNAME_VERIFICATION);
+        }
+
+        Optional.ofNullable(getString(PROXY_URL_CONFIG)).map(URI::create).ifPresent(builder::setProxy);
+        path(PROXY_CA_CERTIFICATES_PATH_CONFIG).ifPresent(builder::setProxyCaCertificatesFile);
+
+        if (!getBoolean(PROXY_HOSTNAME_VERIFICATION_ENABLED_CONFIG)) {
+            builder.setProxyHostnameVerifier(NO_HOSTNAME_VERIFICATION);
+        }
+
+        headers(PROXY_REQUEST_HEADERS_CONFIG).forEach(builder::addProxyRequestHeader);
+
+        return builder;
+    }
+
+    public OperationalMode operationalMode() {
+        return ConfigUtils.getEnum(OperationalMode.class, this, OPERATIONAL_MODE_CONFIG);
+    }
+
+    /** The configured namespace, or the topic when none is. */
+    public String namespace(String topic) {
+        return Optional.ofNullable(getString(NAMESPACE_CONFIG)).orElse(topic);
+    }
+
+    /** The configured document type, or the topic when none is. */
+    public String documentType(String topic) {
+        return Optional.ofNullable(getString(DOCUMENT_TYPE_CONFIG)).orElse(topic);
+    }
+
+    /** The timeout, route and trace level, which every operational mode honours. */
+    public OperationParameters operationParameters() {
+        OperationParameters parameters = OperationParameters.empty();
+        Duration timeout = Duration.ofMillis(getInt(OPERATION_TIMEOUT_MS_CONFIG));
+        String route = getString(OPERATION_ROUTE_CONFIG);
+        int tracelevel = getInt(OPERATION_TRACELEVEL_CONFIG);
+
+        if (timeout.toMillis() > 0) {
+            parameters = parameters.timeout(timeout);
+        }
+
+        if (!Strings.isNullOrEmpty(route)) {
+            parameters = parameters.route(route);
+        }
+
+        if (tracelevel > 0) {
+            parameters = parameters.tracelevel(tracelevel);
+        }
+
+        return parameters;
+    }
+
+    /** The operation parameters of an UPSERT remove: those of every mode plus the condition. */
+    public OperationParameters removeParameters() {
+        String condition = getString(OPERATION_CONDITION_CONFIG);
+        OperationParameters parameters = operationParameters();
+        return Strings.isNullOrEmpty(condition) ? parameters : parameters.testAndSetCondition(condition);
+    }
+
+    /** The operation parameters of an UPSERT put: those of a remove plus create if non-existent. */
+    public OperationParameters putParameters() {
+        return removeParameters().createIfNonExistent(getBoolean(OPERATION_CREATE_IF_NON_EXISTENT_CONFIG));
+    }
+
+    RetryBudget retryBudget() {
+        return new RetryBudget(getInt(MAX_RETRIES_CONFIG), getLong(RETRY_BACKOFF_MS_CONFIG));
+    }
+
+    public boolean dropInvalidMessage() {
+        return getBoolean(DROP_INVALID_MESSAGE_CONFIG);
+    }
+
+    public BehaviorOnMalformedDoc behaviorOnMalformedDoc() {
+        return ConfigUtils.getEnum(BehaviorOnMalformedDoc.class, this, BEHAVIOR_ON_MALFORMED_DOCS_CONFIG);
+    }
+
+    private List<URI> endpoints() {
+        Set<URI> endpoints = getList(ENDPOINT_CONFIG)
+                .stream()
+                .map(s -> s.endsWith("/") ? s : s + "/")
+                .map(URI::create)
+                .collect(Collectors.toCollection(HashSet::new));
+        return List.copyOf(endpoints);
+    }
+
+    private FeedClient.RetryStrategy retryStrategy() {
+        List<FeedClient.OperationType> types =
+                ConfigUtils.getEnums(FeedClient.OperationType.class, this, RETRY_STRATEGY_OPERATION_TYPES_CONFIG);
+        int retries = getInt(RETRY_STRATEGY_RETRIES_CONFIG);
+
+        return new FeedClient.RetryStrategy() {
+            @Override
+            public boolean retry(FeedClient.OperationType type) {
+                return types.contains(type);
+            }
+
+            @Override
+            public int retries() {
+                return retries;
+            }
+        };
+    }
+
+    private Map<String, String> headers(String key) {
+        return parseHeaders(key, getList(key));
+    }
+
+    private Optional<Path> path(String key) {
+        return Optional.ofNullable(getString(key)).map(Paths::get);
+    }
+
+    private static Map<String, String> parseHeaders(String name, List<?> entries) {
         Map<String, String> headers = new LinkedHashMap<>();
         if (entries == null) {
             return headers;

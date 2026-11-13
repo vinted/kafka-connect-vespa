@@ -2,12 +2,10 @@ package com.vinted.kafka.connect.vespa.feeders;
 
 import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.FeedClient;
-import ai.vespa.feed.client.OperationParameters;
 import ai.vespa.feed.client.FeedClientBuilder;
 import ai.vespa.feed.client.Result;
 import ai.vespa.feed.client.impl.GracePeriodCircuitBreaker;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
-import com.vinted.kafka.connect.vespa.factories.VespaFeedClientFactory;
 import com.vinted.kafka.connect.vespa.mocks.MockVespaServer;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.io.Content;
@@ -98,14 +96,14 @@ class IndexingFailureContractTest {
         server = MockVespaServer.http(handler(respond(status, contentType, body)));
         params.put(VespaSinkConfig.ENDPOINT_CONFIG, server.url());
 
-        assertKind(TRANSIENT, assertThrows(RuntimeException.class, () -> VespaFeedClientFactory.create(config())));
+        assertKind(TRANSIENT, assertThrows(RuntimeException.class, () -> config().feedClient()));
     }
 
     @Test
     void classifiesConnectionRefusedDuringHandshakeAsTransient() throws Exception {
         params.put(VespaSinkConfig.ENDPOINT_CONFIG, "http://localhost:" + unusedPort());
 
-        assertKind(TRANSIENT, assertThrows(RuntimeException.class, () -> VespaFeedClientFactory.create(config())));
+        assertKind(TRANSIENT, assertThrows(RuntimeException.class, () -> config().feedClient()));
     }
 
     @Test
@@ -113,7 +111,7 @@ class IndexingFailureContractTest {
         server = MockVespaServer.http(afterHandshake(HANDSHAKE_OK));
         params.put(VespaSinkConfig.ENDPOINT_CONFIG, server.url());
 
-        try (FeedClient client = VespaFeedClientFactory.create(config())) {
+        try (FeedClient client = config().feedClient()) {
             server.close();
 
             assertKind(TRANSIENT, failure(put(client, ID)));
@@ -162,7 +160,7 @@ class IndexingFailureContractTest {
         server = MockVespaServer.http(afterHandshake(respond(412, JSON, vespaError("Condition did not match document"))));
         params.put(VespaSinkConfig.ENDPOINT_CONFIG, server.url());
 
-        try (FeedClient client = VespaFeedClientFactory.create(config())) {
+        try (FeedClient client = config().feedClient()) {
             assertEquals(Result.Type.conditionNotMet, put(client, ID).get(5, SECONDS).type());
         }
     }
@@ -177,13 +175,13 @@ class IndexingFailureContractTest {
     private void assertPutFails(IndexingFailure expected) throws Exception {
         params.put(VespaSinkConfig.ENDPOINT_CONFIG, server.url());
 
-        try (FeedClient client = VespaFeedClientFactory.create(config())) {
+        try (FeedClient client = config().feedClient()) {
             assertKind(expected, failure(put(client, ID)));
         }
     }
 
     private CompletableFuture<Result> put(FeedClient client, DocumentId id) {
-        return client.put(id, DOCUMENT, OperationParameters.empty().timeout(config().timeout));
+        return client.put(id, DOCUMENT, config().operationParameters());
     }
 
     private VespaSinkConfig config() {

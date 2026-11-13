@@ -42,6 +42,10 @@ final class RetryBudget {
         this.initialBackoffMs = initialBackoffMs;
     }
 
+    int maxRetries() {
+        return maxRetries;
+    }
+
     /** Reports each record once across the redeliveries of its batch; {@code null} when no reporter is configured. */
     ErrantRecordReporter reportingOnce(ErrantRecordReporter reporter) {
         if (reporter == null) {
