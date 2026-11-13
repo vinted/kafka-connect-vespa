@@ -149,6 +149,30 @@ Operation types to retry.
 * Valid Values: Matches: `PUT`, `UPDATE`, `REMOVE`
 * Importance: low
 
+`vespa.max.retries`
+
+How many times in a row to retry a batch that failed only because Vespa or the network was unavailable, such as during
+a Vespa upgrade: network errors, timeouts, server errors (5xx) and responses that are not Vespa JSON. Client errors
+(4xx) are never retried. Between retries the task pauses its partitions for a random backoff between 0 and
+`vespa.retry.backoff.ms * 2^retry`, also capped by the time left until the next offset commit, then redelivers the
+whole batch. The count resets after every successful batch; once it is exhausted the task fails. These retries come on
+top of the feed client's own immediate retries, `vespa.retry.strategy.retries`.
+
+* Type: int
+* Default: 10
+* Valid Values: [0,...]
+* Importance: medium
+
+`vespa.retry.backoff.ms`
+
+Initial backoff before retrying a batch after Vespa or the network was unavailable. Each retry waits a random time
+between 0 and twice the previous upper bound. See `vespa.max.retries`.
+
+* Type: long
+* Default: 1000 (1 second)
+* Valid Values: [0,...]
+* Importance: medium
+
 `vespa.circuit.breaker.grace.period.ms`
 
 The period of consecutive failures before the circuit breaker changes state to half-open, during which the feed client
