@@ -67,7 +67,8 @@ public class VespaSinkConfig extends AbstractConfig {
     private static final boolean SPEED_TEST_DEFAULT = false;
 
     public static final String MAX_FAILURE_MS_CONFIG = "vespa.max.failure.ms";
-    private static final String MAX_FAILURE_MS_DOC = "The period of consecutive failures before shutting down.";
+    private static final String MAX_FAILURE_MS_DOC = "The period of consecutive failures after which the "
+            + "feed client's circuit breaker opens; the connector then builds a new feed client.";
     private static final String MAX_FAILURE_MS_DISPLAY = "Max failure ms";
     private static final int MAX_FAILURE_MS_DEFAULT = 60000;
 
@@ -87,8 +88,8 @@ public class VespaSinkConfig extends AbstractConfig {
 
     public static final String OPERATIONAL_MODE_CONFIG = "vespa.operational.mode";
     private static final String OPERATIONAL_MODE_DOC = "The operational mode of the connector. Valid options are "
-            + "upsert and raw. Upsert mode will update existing documents and insert new documents, tombstones "
-            + "messages will be converted to delete operations. Raw mode executes all operations using document "
+            + "upsert and raw. Upsert mode puts each record as a whole document, replacing any existing one, and "
+            + "turns tombstones into removes. Raw mode executes all operations using document "
             + "json format as explained in https://docs.vespa.ai/en/reference/document-json-format.html.";
     private static final String OPERATIONAL_MODE_DISPLAY = "Operational mode";
     private static final OperationalMode OPERATIONAL_MODE_DEFAULT = OperationalMode.UPSERT;
@@ -107,7 +108,8 @@ public class VespaSinkConfig extends AbstractConfig {
     public static final String MAX_RETRIES_CONFIG = "vespa.max.retries";
     private static final String MAX_RETRIES_DOC = "How many times in a row to retry a batch that failed only because "
             + "Vespa or the network was unavailable, such as during a Vespa upgrade: network errors, timeouts, server "
-            + "errors (5xx) and responses that are not Vespa JSON. Client errors (4xx) are never retried. Between "
+            + "errors (5xx) and responses that are not Vespa JSON. Client errors (4xx) are not retried, except "
+            + "a 4xx whose body is not Vespa JSON, as from a proxy, since the feed client loses its status. Between "
             + "retries the task pauses its partitions for a random backoff between 0 and "
             + "`vespa.retry.backoff.ms * 2^retry`, also capped by the time left until the next offset commit, then "
             + "redelivers the whole batch. The count resets after every successful batch; once it is exhausted the "
@@ -249,8 +251,9 @@ public class VespaSinkConfig extends AbstractConfig {
     private static final boolean DROP_INVALID_MESSAGE_DEFAULT = false;
 
     public static final String BEHAVIOR_ON_MALFORMED_DOCS_CONFIG = "vespa.behavior.on.malformed.documents";
-    private static final String BEHAVIOR_ON_MALFORMED_DOCS_DOC = "How to handle records that Vespa rejects due to "
-            + "document malformation. Valid options are `IGNORE`, `WARN`, and `FAIL`.";
+    private static final String BEHAVIOR_ON_MALFORMED_DOCS_DOC = "How to handle malformed documents (an HTTP "
+            + "400, or document JSON the feed client cannot parse) and operations whose test-and-set condition is not "
+            + "met. Valid options are `IGNORE`, `WARN`, and `FAIL`.";
     private static final String BEHAVIOR_ON_MALFORMED_DOCS_DISPLAY = "Behavior on malformed documents";
     private static final BehaviorOnMalformedDoc BEHAVIOR_ON_MALFORMED_DOCS_DEFAULT = BehaviorOnMalformedDoc.FAIL;
 
