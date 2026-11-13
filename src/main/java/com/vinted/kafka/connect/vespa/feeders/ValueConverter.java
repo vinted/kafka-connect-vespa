@@ -1,4 +1,4 @@
-package com.vinted.kafka.connect.vespa.converters;
+package com.vinted.kafka.connect.vespa.feeders;
 
 import org.apache.kafka.connect.json.DecimalFormat;
 import org.apache.kafka.connect.json.JsonConverter;
@@ -9,7 +9,7 @@ import org.apache.kafka.connect.storage.Converter;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
-public class ValueConverter {
+final class ValueConverter {
     private static final Converter JSON_CONVERTER;
 
     static {
@@ -20,7 +20,10 @@ public class ValueConverter {
                 JsonConverterConfig.DECIMAL_FORMAT_CONFIG, DecimalFormat.NUMERIC.name()), false);
     }
 
-    public String convert(SinkRecord record) {
+    private ValueConverter() {
+    }
+
+    static String convert(SinkRecord record) {
         if (record.value() == null) {
             return null;
         } else if (record.value() instanceof byte[]) {

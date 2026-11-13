@@ -1,12 +1,15 @@
-package com.vinted.kafka.connect.vespa.converters;
+package com.vinted.kafka.connect.vespa.feeders;
 
 import org.apache.kafka.connect.data.ConnectSchema;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.SinkRecord;
 
-public class KeyConverter {
-    public String convert(SinkRecord record) {
+final class KeyConverter {
+    private KeyConverter() {
+    }
+
+    static String convert(SinkRecord record) {
         Schema keySchema = record.keySchema();
         Object key = record.key();
 
