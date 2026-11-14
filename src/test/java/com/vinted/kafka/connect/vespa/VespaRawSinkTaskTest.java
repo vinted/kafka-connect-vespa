@@ -2,7 +2,7 @@ package com.vinted.kafka.connect.vespa;
 
 import ai.vespa.feed.client.OperationParameters;
 import com.google.common.base.Strings;
-import com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient;
+import com.vinted.kafka.connect.vespa.mocks.FakeFeedClient;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.DataException;
@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 public class VespaRawSinkTaskTest {
     private long offset = 1;
     private final Map<String, String> params = new HashMap<>();
-    private final RecordingFeedClient client = new RecordingFeedClient();
+    private final FakeFeedClient client = new FakeFeedClient();
     private final ConnectWorker worker = new ConnectWorker(new VespaSinkTask(config -> client));
 
     @BeforeEach

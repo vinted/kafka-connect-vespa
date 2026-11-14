@@ -3,7 +3,7 @@ package com.vinted.kafka.connect.vespa;
 import ai.vespa.feed.client.FeedException;
 import ai.vespa.feed.client.Result;
 import com.vinted.kafka.connect.vespa.mocks.CallbackExecutor;
-import com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient;
+import com.vinted.kafka.connect.vespa.mocks.FakeFeedClient;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.RetriableException;
@@ -17,8 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import static com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient.Answer.failure;
-import static com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient.Answer.result;
+import static com.vinted.kafka.connect.vespa.mocks.FakeFeedClient.Answer.failure;
+import static com.vinted.kafka.connect.vespa.mocks.FakeFeedClient.Answer.result;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -29,7 +29,7 @@ class VespaSinkTaskRetryTest {
     private static final FeedException BAD_REQUEST = new FeedException("Status 400 executing 'POST /document/v1/': bad request");
 
     private final Map<String, String> params = new HashMap<>();
-    private RecordingFeedClient client = new RecordingFeedClient();
+    private FakeFeedClient client = new FakeFeedClient();
     private final ConnectWorker worker = new ConnectWorker(new VespaSinkTask(config -> client));
     private long offset;
 
@@ -144,7 +144,7 @@ class VespaSinkTaskRetryTest {
         List<SinkRecord> batch = List.of(record("malformed-1"), record("malformed-2"), record("rejected"), record("unavailable"));
 
         try (CallbackExecutor callbacks = new CallbackExecutor(batch.size())) {
-            client = new RecordingFeedClient(callbacks)
+            client = new FakeFeedClient(callbacks)
                     .answer("id:ns:dt::malformed-1", failure(BAD_REQUEST))
                     .answer("id:ns:dt::malformed-2", failure(BAD_REQUEST))
                     .answer("id:ns:dt::rejected", result(Result.Type.conditionNotMet))

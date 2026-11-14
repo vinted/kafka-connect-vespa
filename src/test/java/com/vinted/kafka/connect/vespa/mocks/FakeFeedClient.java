@@ -15,9 +15,16 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/** Records each operation sent, in order, and answers it as scripted for its document, or else for every document. */
-public final class RecordingFeedClient implements FeedClient {
+/**
+ * Records each operation sent, in order, and answers it as scripted for its document, or else for every document.
+ * {@link #acknowledgingAll()} instead succeeds every operation at once and records nothing, to measure what the
+ * connector itself costs.
+ */
+public final class FakeFeedClient implements FeedClient {
+    private static final CompletableFuture<Result> ACKNOWLEDGED = CompletableFuture.completedFuture(resultOf(Result.Type.success, null));
+
     private final Executor answers;
+    private final boolean acknowledgeAll;
     private final List<Operation> operations = new CopyOnWriteArrayList<>();
     private final Map<DocumentId, Answer> answersByDocument = new ConcurrentHashMap<>();
     private volatile Answer answer = Answer.success();
@@ -25,22 +32,36 @@ public final class RecordingFeedClient implements FeedClient {
     private final AtomicInteger closes = new AtomicInteger();
 
     /** Answers each operation before returning its future. */
-    public RecordingFeedClient() {
+    public FakeFeedClient() {
         this(Runnable::run);
     }
 
     /** Answers each operation by running the answer on {@code answers}, as the real client does on its own threads. */
-    public RecordingFeedClient(Executor answers) {
+    public FakeFeedClient(Executor answers) {
+        this(answers, false);
+    }
+
+    private FakeFeedClient(Executor answers, boolean acknowledgeAll) {
         this.answers = answers;
+        this.acknowledgeAll = acknowledgeAll;
+    }
+
+    public static FakeFeedClient acknowledgingAll() {
+        return new FakeFeedClient(Runnable::run, true);
+    }
+
+    /** A result of the given type for the document, as the feed client completes an operation with. */
+    public static Result resultOf(Result.Type type, DocumentId documentId) {
+        return new ScriptedResult(type, documentId);
     }
 
     /** Answers every document without an answer of its own; success unless scripted. */
-    public RecordingFeedClient answerAll(Answer answer) {
+    public FakeFeedClient answerAll(Answer answer) {
         this.answer = answer;
         return this;
     }
 
-    public RecordingFeedClient answer(String documentId, Answer answer) {
+    public FakeFeedClient answer(String documentId, Answer answer) {
         answersByDocument.put(DocumentId.of(documentId), answer);
         return this;
     }
@@ -97,8 +118,14 @@ public final class RecordingFeedClient implements FeedClient {
     }
 
     private CompletableFuture<Result> send(Operation operation) {
-        operations.add(operation);
+        if (acknowledgeAll) {
+            return ACKNOWLEDGED;
+        }
         Answer scripted = answersByDocument.getOrDefault(operation.documentId, answer);
+        if (scripted.refusal != null) {
+            throw scripted.refusal;
+        }
+        operations.add(operation);
         CompletableFuture<Result> future = new CompletableFuture<>();
         answers.execute(() -> scripted.complete(future, operation.documentId));
         return future;
@@ -132,14 +159,16 @@ public final class RecordingFeedClient implements FeedClient {
         }
     }
 
-    /** A result of the given type, or a failure, for an operation. */
+    /** A result of the given type, a failure, or a refusal to take the operation at all, for an operation. */
     public static final class Answer {
         private final Result.Type type;
         private final Throwable failure;
+        private final RuntimeException refusal;
 
-        private Answer(Result.Type type, Throwable failure) {
+        private Answer(Result.Type type, Throwable failure, RuntimeException refusal) {
             this.type = type;
             this.failure = failure;
+            this.refusal = refusal;
         }
 
         public static Answer success() {
@@ -147,11 +176,16 @@ public final class RecordingFeedClient implements FeedClient {
         }
 
         public static Answer result(Result.Type type) {
-            return new Answer(type, null);
+            return new Answer(type, null, null);
         }
 
         public static Answer failure(Throwable failure) {
-            return new Answer(null, failure);
+            return new Answer(null, failure, null);
+        }
+
+        /** Throws from the call that sends the operation, as a closed client does, so the operation is not sent. */
+        public static Answer refusal(RuntimeException refusal) {
+            return new Answer(null, null, refusal);
         }
 
         private void complete(CompletableFuture<Result> future, DocumentId documentId) {
@@ -159,7 +193,7 @@ public final class RecordingFeedClient implements FeedClient {
                 future.completeExceptionally(failure);
                 return;
             }
-            future.complete(new ScriptedResult(type, documentId));
+            future.complete(resultOf(type, documentId));
         }
     }
 
