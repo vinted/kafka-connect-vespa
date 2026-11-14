@@ -5,7 +5,6 @@ import ai.vespa.feed.client.FeedClient;
 import ai.vespa.feed.client.JsonFeeder;
 import ai.vespa.feed.client.OperationParameters;
 import ai.vespa.feed.client.Result;
-import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Kind;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -107,7 +106,7 @@ final class FeedSession implements Closeable {
         try {
             return clients.get();
         } catch (RuntimeException e) {
-            throw new VespaFeedException(Kind.of(IndexingFailure.of(e)), e);
+            throw new VespaFeedException(IndexingFailure.of(e).kind(), e);
         }
     }
 
