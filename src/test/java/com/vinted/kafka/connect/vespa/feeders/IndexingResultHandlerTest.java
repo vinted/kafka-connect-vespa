@@ -9,6 +9,7 @@ import com.vinted.kafka.connect.vespa.CapturedLogs;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Failure;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Kind;
+import com.vinted.kafka.connect.vespa.mocks.FakeFeedClient;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
@@ -199,26 +200,6 @@ class IndexingResultHandlerTest {
     }
 
     private static Result result(Result.Type type) {
-        return new Result() {
-            @Override
-            public Type type() {
-                return type;
-            }
-
-            @Override
-            public DocumentId documentId() {
-                return ID;
-            }
-
-            @Override
-            public Optional<String> resultMessage() {
-                return Optional.empty();
-            }
-
-            @Override
-            public Optional<String> traceMessage() {
-                return Optional.empty();
-            }
-        };
+        return FakeFeedClient.resultOf(type, ID);
     }
 }
