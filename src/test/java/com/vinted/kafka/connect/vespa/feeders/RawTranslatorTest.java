@@ -1,6 +1,5 @@
 package com.vinted.kafka.connect.vespa.feeders;
 
-import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentJson;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.sink.SinkRecord;
@@ -9,7 +8,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -65,7 +63,7 @@ class RawTranslatorTest {
     }
 
     private RawTranslator translator() {
-        return new RawTranslator(new VespaSinkConfig(Map.of()), (record, error) -> CompletableFuture.completedFuture(null));
+        return new RawTranslator(false, (record, error) -> CompletableFuture.completedFuture(null));
     }
 
     private SinkRecord record(String value) {

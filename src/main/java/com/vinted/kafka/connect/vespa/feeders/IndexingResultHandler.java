@@ -25,8 +25,8 @@ public class IndexingResultHandler {
     private final VespaSinkConfig.BehaviorOnMalformedDoc behaviorOnMalformedDoc;
     private final ErrantRecordReporter reporter;
 
-    public IndexingResultHandler(VespaSinkConfig config, ErrantRecordReporter reporter) {
-        this.behaviorOnMalformedDoc = config.behaviorOnMalformedDoc();
+    IndexingResultHandler(VespaSinkConfig.BehaviorOnMalformedDoc behaviorOnMalformedDoc, ErrantRecordReporter reporter) {
+        this.behaviorOnMalformedDoc = behaviorOnMalformedDoc;
         this.reporter = reporter;
     }
 

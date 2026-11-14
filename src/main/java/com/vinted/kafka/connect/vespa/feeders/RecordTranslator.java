@@ -25,8 +25,8 @@ abstract class RecordTranslator<T extends VespaOperation> {
     private final boolean dropInvalidMessage;
     private final ErrantRecordReporter reporter;
 
-    RecordTranslator(VespaSinkConfig config, ErrantRecordReporter reporter) {
-        this.dropInvalidMessage = config.dropInvalidMessage();
+    RecordTranslator(boolean dropInvalidMessage, ErrantRecordReporter reporter) {
+        this.dropInvalidMessage = dropInvalidMessage;
         this.reporter = reporter;
     }
 
@@ -35,7 +35,7 @@ abstract class RecordTranslator<T extends VespaOperation> {
             case UPSERT:
                 return new UpsertTranslator(config, reporter);
             case RAW:
-                return new RawTranslator(config, reporter);
+                return new RawTranslator(config.dropInvalidMessage(), reporter);
             default:
                 throw new ConnectException(String.format("Unknown operational mode: %s", config.operationalMode()));
         }

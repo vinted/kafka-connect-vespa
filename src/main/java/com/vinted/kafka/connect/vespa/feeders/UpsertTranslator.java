@@ -25,7 +25,7 @@ final class UpsertTranslator extends RecordTranslator<DocumentOperation> {
     private final OperationParameters removeParameters;
 
     UpsertTranslator(VespaSinkConfig config, ErrantRecordReporter reporter) {
-        super(config, reporter);
+        super(config.dropInvalidMessage(), reporter);
         this.config = config;
         this.putParameters = config.putParameters();
         this.removeParameters = config.removeParameters();

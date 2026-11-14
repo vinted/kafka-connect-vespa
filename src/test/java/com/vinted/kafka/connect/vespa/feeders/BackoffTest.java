@@ -1,4 +1,4 @@
-package com.vinted.kafka.connect.vespa;
+package com.vinted.kafka.connect.vespa.feeders;
 
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;

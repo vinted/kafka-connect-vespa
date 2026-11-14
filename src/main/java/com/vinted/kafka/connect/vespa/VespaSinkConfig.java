@@ -19,7 +19,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.*;
-import java.util.function.LongConsumer;
 import java.util.stream.Collectors;
 
 import static org.apache.kafka.common.config.ConfigDef.Range.atLeast;
@@ -827,8 +826,12 @@ public class VespaSinkConfig extends AbstractConfig {
         return removeParameters().createIfNonExistent(getBoolean(OPERATION_CREATE_IF_NON_EXISTENT_CONFIG));
     }
 
-    RetryBudget retryBudget(LongConsumer backOff) {
-        return new RetryBudget(getInt(MAX_RETRIES_CONFIG), getLong(RETRY_BACKOFF_MS_CONFIG), backOff);
+    public int maxRetries() {
+        return getInt(MAX_RETRIES_CONFIG);
+    }
+
+    public long retryBackoffMs() {
+        return getLong(RETRY_BACKOFF_MS_CONFIG);
     }
 
     public boolean dropInvalidMessage() {
