@@ -1,0 +1,25 @@
+schema item {
+    document item {
+        field title type string {
+            indexing: index | summary
+        }
+        field description type string {
+            indexing: index | summary
+        }
+        field brand type string {
+            indexing: attribute | summary
+        }
+        field tags type array<string> {
+            indexing: attribute | summary
+        }
+        field price type double {
+            indexing: attribute | summary
+        }
+        field views type long {
+            indexing: attribute | summary
+        }
+        field locked type bool {
+            indexing: attribute | summary
+        }
+    }
+}

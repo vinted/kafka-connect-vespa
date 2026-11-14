@@ -459,6 +459,84 @@ Additional HTTP headers sent with every request to the proxy, as a comma-separat
 
 <!-- config:end -->
 
+### Performance
+
+A task feeds the batch Connect hands to `put` and waits for every result before it takes the next batch, so its
+throughput is how many operations it keeps in flight divided by how long Vespa takes to answer them. The connector's
+own work is small: about 0.2 µs per record for JSON strings and 1.5 µs for structs and RAW operations, a few percent of
+what the feed client spends on HTTP/2.
+
+#### Feeding at high throughput
+
+Start from [config/quickstart-vespa-high-throughput.json](config/quickstart-vespa-high-throughput.json) and tune it in
+this order:
+
+1. **Check that Vespa has capacity to spare.** When Vespa is the bottleneck, its feed latency and content node CPU
+   climb as load grows, and more connector concurrency does not help: against one saturated node, 6 tasks with 4
+   connections each fed slower than with 1, and Vespa failed more requests, which the tasks had to retry. Add content
+   nodes and containers instead.
+2. **Run one task per partition.** Set `tasks.max` to the topic's partition count. Each task has its own feed client,
+   and tasks beyond the partition count stay idle.
+3. **Give each task big batches.** Raise `consumer.override.max.poll.records` to a few thousand, and
+   `consumer.override.max.partition.fetch.bytes` to at least `max.poll.records` times the record size. The consumer
+   fetches 1 MiB per partition by default, which caps a batch at about 1,000 records of 1 KB whatever
+   `max.poll.records` says. The worker's `connector.client.config.override.policy` must allow these overrides; `All`
+   is the default since Kafka 3.0.
+4. **Add connections for a distant cluster.** Each connection keeps about 100 operations of 1 KB in flight, so it feeds
+   about 100 divided by Vespa's latency in seconds: about 10,000 documents per second at 10 ms, and 50,000 at 2 ms.
+   Set `vespa.connections.per.endpoint` to cover the rate each task needs, and keep the total, `tasks.max` times the
+   connections, within what Vespa's containers take. More streams per connection, `vespa.max.streams.per.connection`,
+   did not help.
+
+Bigger batches hold more in memory and make each `put` last longer. A task keeps about three copies of its batch (the
+records, their document JSON and the requests), about 15 MB for 5,000 records of 1 KB, and a batch waits up to
+`vespa.operation.timeout.ms` for its results, which must stay below the consumer's `max.poll.interval.ms`.
+
+While Vespa is unavailable, a task keeps retrying its batch: in the tests, nothing was lost when the whole Vespa
+container or its content node restarted mid-feed. Under heavy concurrency, Vespa occasionally fails a request with an
+empty `500` response, which the task retries like any transient failure.
+
+#### Measurements
+
+With 1 KB documents, through Kafka and a Connect worker into a single Vespa node in Docker, 500,000 records on a topic
+with 6 partitions:
+
+| Settings                                                                       | Records per `put` | Documents/s |
+|--------------------------------------------------------------------------------|-------------------|-------------|
+| defaults, `tasks.max=1`                                                        | 500               | 8,200       |
+| defaults, `tasks.max=6`                                                        | 500               | 10,900      |
+| `tasks.max=6`, `max.poll.records=5000`                                         | 1,030             | 10,600      |
+| `tasks.max=6`, `max.poll.records=5000`, `max.partition.fetch.bytes=10485760`   | 5,000             | 10,500      |
+| the same with `vespa.connections.per.endpoint=4`                               | 5,000             | 9,800       |
+
+The single node is the limit from the second row on. With one task, fed by the performance tests below to a server
+that answers after 10 ms without indexing, which stands for a distant cluster with capacity to spare:
+
+| `vespa.connections.per.endpoint` | Records per `put` | Documents/s |
+|----------------------------------|-------------------|-------------|
+| 1                                | 500               | 9,000       |
+| 8                                | 500               | 25,000      |
+| 2                                | 5,000             | 21,000      |
+| 4                                | 5,000             | 41,000      |
+| 8                                | 5,000             | 59,000      |
+
+The feed client alone, with every document in flight at once, reaches 62,000 with 8 connections.
+
+#### Performance tests
+
+`scripts/performance.sh` starts Vespa in Docker (`VESPA_IMAGE` overrides the image), deploys the application in
+`src/test/resources/performance/app`, and runs the tests tagged `performance` against it; its arguments go to Maven:
+
+* `FeedPerformanceTest` reports throughput, put latency and CPU per mode, next to the feed client alone.
+* `FeedUnderLoadTest` checks that every malformed document is skipped and reported once, that RAW operations are
+  applied in order, and, with `-Dvespa.perf.outage.command="docker restart kcv-perf-vespa"`, that nothing is lost
+  when Vespa restarts mid-feed.
+
+`-Dvespa.perf.records`, `-Dvespa.perf.batch` and `-Dvespa.perf.connector.<setting>` change the load and the connector
+settings. `-Dvespa.perf.endpoint=mock` feeds a local server that answers at once, or after
+`-Dvespa.perf.mock.latency.micros`, and `-Dvespa.perf.endpoint=stub` replaces the feed client, to measure the connector
+alone.
+
 ### Authentication
 
 #### Mutual TLS
@@ -521,6 +599,30 @@ the distributed connect worker(s).
     "vespa.endpoint": "http://vespa:8080/",
     "vespa.namespace": "default",
     "vespa.document.type": "music"
+  }
+}
+```
+
+##### High-throughput Example
+
+This configuration feeds a topic of 12 partitions with a task each, gives each task batches of 5,000 records of up to
+2 KB, and opens 4 connections per task. See [Feeding at high throughput](#feeding-at-high-throughput) for how to size
+each setting to your topic and Vespa cluster.
+
+```json
+{
+  "config": {
+    "connector.class": "com.vinted.kafka.connect.vespa.VespaSinkConnector",
+    "tasks.max": "12",
+    "topics": "music",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "consumer.override.max.poll.records": "5000",
+    "consumer.override.max.partition.fetch.bytes": "10485760",
+    "vespa.endpoint": "http://vespa:8080/",
+    "vespa.namespace": "default",
+    "vespa.document.type": "music",
+    "vespa.connections.per.endpoint": "4"
   }
 }
 ```
