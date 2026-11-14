@@ -26,18 +26,6 @@ public class VespaFeedException extends ConnectException {
             this.description = description;
         }
 
-        static Kind of(IndexingFailure failure) {
-            switch (failure) {
-                case MALFORMED_DOCUMENT:
-                    return MALFORMED_DOCUMENT;
-                case TRANSIENT:
-                    return TRANSIENT;
-                case FATAL:
-                default:
-                    return FATAL;
-            }
-        }
-
         @Override
         public String toString() {
             return description;

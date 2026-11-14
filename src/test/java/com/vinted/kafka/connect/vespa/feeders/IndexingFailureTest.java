@@ -9,6 +9,7 @@ import com.fasterxml.jackson.core.JsonParseException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
@@ -72,6 +73,12 @@ class IndexingFailureTest {
     @MethodSource("failures")
     void classifiesFailures(String name, Throwable failure, IndexingFailure expected) {
         assertEquals(expected, IndexingFailure.of(failure));
+    }
+
+    @ParameterizedTest
+    @EnumSource(IndexingFailure.class)
+    void failsTheFeedWithTheKindOfTheSameName(IndexingFailure failure) {
+        assertEquals(failure.name(), failure.kind().name());
     }
 
     @Test

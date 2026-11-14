@@ -22,12 +22,23 @@ import java.util.stream.Stream;
  * The one place that reads the client's exception messages.
  */
 public enum IndexingFailure {
-    MALFORMED_DOCUMENT,
-    TRANSIENT,
-    FATAL;
+    MALFORMED_DOCUMENT(VespaFeedException.Kind.MALFORMED_DOCUMENT),
+    TRANSIENT(VespaFeedException.Kind.TRANSIENT),
+    FATAL(VespaFeedException.Kind.FATAL);
 
     private static final Pattern STATUS = Pattern.compile("Status (\\d{3}) executing");
     private static final int MAX_DESCRIPTION = 300;
+
+    private final VespaFeedException.Kind kind;
+
+    IndexingFailure(VespaFeedException.Kind kind) {
+        this.kind = kind;
+    }
+
+    /** How the feed reports this failure. */
+    VespaFeedException.Kind kind() {
+        return kind;
+    }
 
     public static IndexingFailure of(Throwable failure) {
         if (failure instanceof CompletionException && failure.getCause() != null) {

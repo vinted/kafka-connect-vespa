@@ -56,7 +56,7 @@ public class IndexingResultHandler {
         }
 
         logFailure(record, failure, throwable);
-        return Optional.of(new Failure(Kind.of(failure), throwable));
+        return Optional.of(new Failure(failure.kind(), throwable));
     }
 
     // The errant record reporter throws "Tolerance exceeded" under errors.tolerance=none.
