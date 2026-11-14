@@ -1,0 +1,16 @@
+{
+  "config": {
+    "name": "VespaSinkConnectorHighThroughput",
+    "connector.class": "com.vinted.kafka.connect.vespa.VespaSinkConnector",
+    "tasks.max": "12",
+    "topics": "music",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "consumer.override.max.poll.records": "5000",
+    "consumer.override.max.partition.fetch.bytes": "10485760",
+    "vespa.endpoint": "http://vespa:8080/",
+    "vespa.namespace": "default",
+    "vespa.document.type": "music",
+    "vespa.connections.per.endpoint": "4"
+  }
+}

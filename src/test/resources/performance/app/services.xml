@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<services version="1.0">
+    <container id="default" version="1.0">
+        <document-api/>
+        <search/>
+        <nodes>
+            <jvm options="-Xms1g -Xmx1g"/>
+            <node hostalias="node1"/>
+        </nodes>
+    </container>
+    <content id="items" version="1.0">
+        <min-redundancy>1</min-redundancy>
+        <documents>
+            <document type="item" mode="index"/>
+        </documents>
+        <nodes>
+            <node hostalias="node1" distribution-key="0"/>
+        </nodes>
+    </content>
+</services>
