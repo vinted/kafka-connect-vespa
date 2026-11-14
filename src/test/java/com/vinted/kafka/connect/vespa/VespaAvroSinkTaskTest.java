@@ -1,7 +1,7 @@
 package com.vinted.kafka.connect.vespa;
 
 import ai.vespa.feed.client.DocumentId;
-import com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient;
+import com.vinted.kafka.connect.vespa.mocks.FakeFeedClient;
 import io.confluent.connect.avro.AvroConverter;
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
 import org.apache.avro.Conversions;
@@ -65,7 +65,7 @@ class VespaAvroSinkTaskTest {
     private final AvroConverter valueConverter = new AvroConverter();
 
     private final Map<String, String> params = new HashMap<>();
-    private final RecordingFeedClient client = new RecordingFeedClient();
+    private final FakeFeedClient client = new FakeFeedClient();
     private final ConnectWorker worker = new ConnectWorker(new VespaSinkTask(config -> client));
     private long offset;
 

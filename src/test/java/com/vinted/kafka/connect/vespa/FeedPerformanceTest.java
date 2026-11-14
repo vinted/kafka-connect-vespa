@@ -4,6 +4,7 @@ import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.FeedClient;
 import ai.vespa.feed.client.Result;
 import org.apache.kafka.connect.sink.SinkRecord;
+import com.vinted.kafka.connect.vespa.mocks.FakeFeedClient;
 import com.vinted.kafka.connect.vespa.mocks.MockVespaServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -106,7 +107,7 @@ class FeedPerformanceTest {
         List<SinkRecord> warmup = factory.records(documents.subList(0, WARMUP_RECORDS), 0);
         List<SinkRecord> measured = factory.records(documents.subList(WARMUP_RECORDS, documents.size()), WARMUP_RECORDS);
 
-        VespaSinkTask task = STUB ? new VespaSinkTask(config -> new AcknowledgingFeedClient()) : new VespaSinkTask();
+        VespaSinkTask task = STUB ? new VespaSinkTask(config -> FakeFeedClient.acknowledgingAll()) : new VespaSinkTask();
         ConnectWorker worker = new ConnectWorker(task).start(PerformanceRecords.connectorProps(endpoint, overrides));
 
         try {

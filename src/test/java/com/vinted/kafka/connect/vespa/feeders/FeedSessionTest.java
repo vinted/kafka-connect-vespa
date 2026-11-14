@@ -9,7 +9,7 @@ import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentJson;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.Put;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.Remove;
-import com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient;
+import com.vinted.kafka.connect.vespa.mocks.FakeFeedClient;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.Test;
@@ -26,6 +26,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.function.Supplier;
 
+import static com.vinted.kafka.connect.vespa.mocks.FakeFeedClient.Answer.refusal;
 import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertNothingSent;
 import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertSent;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -34,9 +35,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 class FeedSessionTest {
     private static final DocumentId ID = DocumentId.of("id:ns:dt::a");
@@ -46,7 +44,7 @@ class FeedSessionTest {
     private static final FeedException HANDSHAKE_FAILED = new FeedException(
             "failed handshake with server after PT30S", new java.net.ConnectException("Connection refused"));
 
-    private final RecordingFeedClient client = new RecordingFeedClient();
+    private final FakeFeedClient client = new FakeFeedClient();
 
     @Test
     void closesTheClientOnceWhenOnlyDocumentOperationsWereSent() throws IOException {
@@ -89,7 +87,7 @@ class FeedSessionTest {
 
     @Test
     void replacesTheClientOnceItsCircuitBreakerOpens() {
-        RecordingFeedClient replacement = new RecordingFeedClient();
+        FakeFeedClient replacement = new FakeFeedClient();
         Clients clients = new Clients(client, replacement);
         FeedSession session = FeedSession.open(clients, OperationParameters.empty());
 
@@ -139,8 +137,7 @@ class FeedSessionTest {
     @Test
     void failsTheResultOfAnOperationTheClientRefuses() {
         IllegalStateException closed = new IllegalStateException("Client is closed");
-        FeedClient refusing = mock(FeedClient.class);
-        when(refusing.put(any(), any(), any())).thenThrow(closed);
+        FakeFeedClient refusing = new FakeFeedClient().answerAll(refusal(closed));
         FeedSession session = FeedSession.open(() -> refusing, OperationParameters.empty());
 
         List<CompletableFuture<Result>> results = session.submit(List.of(put(), put()));

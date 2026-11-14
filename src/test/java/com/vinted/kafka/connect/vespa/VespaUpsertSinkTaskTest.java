@@ -6,7 +6,7 @@ import ai.vespa.feed.client.OperationParameters;
 import ai.vespa.feed.client.Result;
 import com.google.common.base.Strings;
 import com.vinted.kafka.connect.vespa.mocks.CallbackExecutor;
-import com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient;
+import com.vinted.kafka.connect.vespa.mocks.FakeFeedClient;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.DataException;
@@ -19,8 +19,8 @@ import java.util.*;
 
 import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertNothingSent;
 import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertSent;
-import static com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient.Answer.failure;
-import static com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient.Answer.result;
+import static com.vinted.kafka.connect.vespa.mocks.FakeFeedClient.Answer.failure;
+import static com.vinted.kafka.connect.vespa.mocks.FakeFeedClient.Answer.result;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class VespaUpsertSinkTaskTest {
     private long offset = 1;
     private final Map<String, String> params = new HashMap<>();
-    private RecordingFeedClient client = new RecordingFeedClient();
+    private FakeFeedClient client = new FakeFeedClient();
     private final ConnectWorker worker = new ConnectWorker(new VespaSinkTask(config -> client));
     private final String topic = UUID.randomUUID().toString();
 
@@ -159,7 +159,7 @@ public class VespaUpsertSinkTaskTest {
         params.put(VespaSinkConfig.DOCUMENT_TYPE_CONFIG, "dt");
         params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
         try (CallbackExecutor callbacks = new CallbackExecutor(3)) {
-            client = new RecordingFeedClient(callbacks)
+            client = new FakeFeedClient(callbacks)
                     .answer("id:ns:dt::malformed", failure(new FeedException("Status 400 executing 'POST /document/v1/': bad request")));
             worker.start(params);
 
