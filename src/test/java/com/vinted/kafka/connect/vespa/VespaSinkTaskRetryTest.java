@@ -7,20 +7,14 @@ import com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.RetriableException;
-import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
-import org.apache.kafka.connect.sink.SinkTaskContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Queue;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.stream.Collectors;
 
 import static com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient.Answer.failure;
@@ -28,14 +22,6 @@ import static com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient.Answer.re
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 class VespaSinkTaskRetryTest {
     private static final FeedException UNAVAILABLE = new FeedException("Status 503 executing 'POST /document/v1/': unavailable");
@@ -43,10 +29,8 @@ class VespaSinkTaskRetryTest {
     private static final FeedException BAD_REQUEST = new FeedException("Status 400 executing 'POST /document/v1/': bad request");
 
     private final Map<String, String> params = new HashMap<>();
-    private final SinkTaskContext context = mock(SinkTaskContext.class);
-    private final ErrantRecordReporter reporter = mock(ErrantRecordReporter.class);
     private RecordingFeedClient client = new RecordingFeedClient();
-    private final VespaSinkTask task = new VespaSinkTask(config -> client);
+    private final ConnectWorker worker = new ConnectWorker(new VespaSinkTask(config -> client));
     private long offset;
 
     @BeforeEach
@@ -55,34 +39,32 @@ class VespaSinkTaskRetryTest {
         params.put(VespaSinkConfig.DOCUMENT_TYPE_CONFIG, "dt");
         params.put(VespaSinkConfig.MAX_RETRIES_CONFIG, "1");
         params.put(VespaSinkConfig.RETRY_BACKOFF_MS_CONFIG, "1000");
-        when(context.errantRecordReporter()).thenReturn(reporter);
-        task.initialize(context);
     }
 
     @AfterEach
     void after() {
-        task.stop();
+        worker.stop();
     }
 
     @Test
     void asksConnectToBackOffBeforeRedeliveringATransientFailure() {
         client.answerAll(failure(UNAVAILABLE));
-        task.start(params);
+        worker.start(params);
 
-        assertThrows(RetriableException.class, () -> task.put(batch()));
+        assertThrows(RetriableException.class, () -> worker.put(batch()));
 
-        ArgumentCaptor<Long> backoff = ArgumentCaptor.forClass(Long.class);
-        verify(context).timeout(backoff.capture());
-        assertTrue(backoff.getValue() >= 0 && backoff.getValue() < 2000, "backoff " + backoff.getValue());
+        List<Long> backoffs = worker.backoffs();
+        assertEquals(1, backoffs.size());
+        assertTrue(backoffs.get(0) >= 0 && backoffs.get(0) < 2000, "backoff " + backoffs.get(0));
     }
 
     @Test
     void logsWhyVespaIsUnavailableWhenRetrying() {
         client.answerAll(failure(UNAVAILABLE));
-        task.start(params);
+        worker.start(params);
 
         try (CapturedLogs logs = CapturedLogs.capture()) {
-            assertThrows(RetriableException.class, () -> task.put(batch()));
+            assertThrows(RetriableException.class, () -> worker.put(batch()));
 
             String warnings = String.join("\n", logs.warnings());
             assertTrue(warnings.contains("Vespa is unavailable") && warnings.contains("Status 503"), warnings);
@@ -92,45 +74,45 @@ class VespaSinkTaskRetryTest {
     @Test
     void failsTheTaskOnceTheRetryBudgetIsExhausted() {
         client.answerAll(failure(UNAVAILABLE));
-        task.start(params);
+        worker.start(params);
 
-        assertThrows(RetriableException.class, () -> task.put(batch()));
-        assertNotRetriable(() -> task.put(batch()));
+        assertThrows(RetriableException.class, () -> worker.put(batch()));
+        assertNotRetriable(() -> worker.put(batch()));
 
-        verify(context, times(1)).timeout(anyLong());
+        assertEquals(1, worker.redeliveries());
     }
 
     @Test
     void startsTheRetryBudgetAgainAfterASuccessfulBatch() {
-        task.start(params);
+        worker.start(params);
 
         client.answerAll(failure(UNAVAILABLE));
-        assertThrows(RetriableException.class, () -> task.put(batch()));
+        assertThrows(RetriableException.class, () -> worker.put(batch()));
         client.answerAll(result(Result.Type.success));
-        task.put(batch());
+        worker.put(batch());
         client.answerAll(failure(UNAVAILABLE));
 
-        assertThrows(RetriableException.class, () -> task.put(batch()));
-        verify(context, times(2)).timeout(anyLong());
+        assertThrows(RetriableException.class, () -> worker.put(batch()));
+        assertEquals(2, worker.redeliveries());
     }
 
     @Test
     void failsTheTaskOnFailuresThatAreNotTransient() {
         client.answerAll(failure(UNAUTHORIZED));
-        task.start(params);
+        worker.start(params);
 
-        assertNotRetriable(() -> task.put(batch()));
-        verify(context, never()).timeout(anyLong());
+        assertNotRetriable(() -> worker.put(batch()));
+        assertEquals(0, worker.redeliveries());
     }
 
     @Test
     void logsAFatalFailureOnceAndThatItFailsTheTask() {
         client.answerAll(failure(UNAUTHORIZED));
         SinkRecord unauthorized = record("unauthorized");
-        task.start(params);
+        worker.start(params);
 
         try (CapturedLogs logs = CapturedLogs.capture()) {
-            assertNotRetriable(() -> task.put(List.of(unauthorized)));
+            assertNotRetriable(() -> worker.put(List.of(unauthorized)));
 
             List<String> errors = logs.errors();
             List<String> withStackTraces = errors.stream().filter(error -> error.contains("\tat ")).collect(Collectors.toList());
@@ -148,22 +130,17 @@ class VespaSinkTaskRetryTest {
         List<SinkRecord> batch = List.of(malformed, record("unavailable"));
         client.answer("id:ns:dt::malformed", failure(BAD_REQUEST))
                 .answer("id:ns:dt::unavailable", failure(UNAVAILABLE));
-        task.start(params);
+        worker.start(params);
 
-        assertThrows(RetriableException.class, () -> task.put(batch));
-        assertNotRetriable(() -> task.put(batch));
+        assertThrows(RetriableException.class, () -> worker.put(batch));
+        assertNotRetriable(() -> worker.put(batch));
 
-        verify(reporter, times(1)).report(eq(malformed), any());
+        assertEquals(List.of(malformed), worker.reported());
     }
 
     @Test
     void reportsEachSkippedRecordOnceWhileResultsArriveConcurrentlyOnCallbackThreads() throws Exception {
         params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
-        Queue<String> reports = new ConcurrentLinkedQueue<>();
-        when(context.errantRecordReporter()).thenReturn((record, error) -> {
-            reports.add(record.key() + " on " + Thread.currentThread().getName());
-            return CompletableFuture.completedFuture(null);
-        });
         List<SinkRecord> batch = List.of(record("malformed-1"), record("malformed-2"), record("rejected"), record("unavailable"));
 
         try (CallbackExecutor callbacks = new CallbackExecutor(batch.size())) {
@@ -172,15 +149,15 @@ class VespaSinkTaskRetryTest {
                     .answer("id:ns:dt::malformed-2", failure(BAD_REQUEST))
                     .answer("id:ns:dt::rejected", result(Result.Type.conditionNotMet))
                     .answer("id:ns:dt::unavailable", failure(UNAVAILABLE));
-            task.start(params);
+            worker.start(params);
 
-            assertThrows(RetriableException.class, () -> task.put(batch));
-            assertNotRetriable(() -> task.put(batch));
+            assertThrows(RetriableException.class, () -> worker.put(batch));
+            assertNotRetriable(() -> worker.put(batch));
         }
 
         String callbackThread = " on " + CallbackExecutor.THREAD_NAME;
         assertEquals(List.of("malformed-1" + callbackThread, "malformed-2" + callbackThread, "rejected" + callbackThread),
-                reports.stream().sorted().collect(Collectors.toList()));
+                worker.reportedKeysAndThreads().stream().sorted().collect(Collectors.toList()));
         assertEquals(2 * batch.size(), client.operations().size(), "operations sent over both deliveries");
     }
 
@@ -190,12 +167,12 @@ class VespaSinkTaskRetryTest {
         SinkRecord invalid = new SinkRecord("topic", 0, Schema.STRING_SCHEMA, null, Schema.STRING_SCHEMA, "{}", offset++);
         List<SinkRecord> batch = List.of(invalid, record("unavailable"));
         client.answerAll(failure(UNAVAILABLE));
-        task.start(params);
+        worker.start(params);
 
-        assertThrows(RetriableException.class, () -> task.put(batch));
-        assertNotRetriable(() -> task.put(batch));
+        assertThrows(RetriableException.class, () -> worker.put(batch));
+        assertNotRetriable(() -> worker.put(batch));
 
-        verify(reporter, times(1)).report(eq(invalid), any());
+        assertEquals(List.of(invalid), worker.reported());
     }
 
     private static void assertNotRetriable(org.junit.jupiter.api.function.Executable put) {

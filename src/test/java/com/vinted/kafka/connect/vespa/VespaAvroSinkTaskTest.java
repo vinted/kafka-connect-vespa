@@ -12,7 +12,6 @@ import org.apache.avro.generic.GenericRecord;
 import org.apache.kafka.connect.data.SchemaAndValue;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.sink.SinkRecord;
-import org.apache.kafka.connect.sink.SinkTaskContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,7 +29,6 @@ import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertNothingS
 import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertSent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.mock;
 
 class VespaAvroSinkTaskTest {
     private static final String TOPIC = "music";
@@ -68,7 +66,7 @@ class VespaAvroSinkTaskTest {
 
     private final Map<String, String> params = new HashMap<>();
     private final RecordingFeedClient client = new RecordingFeedClient();
-    private final VespaSinkTask task = new VespaSinkTask(config -> client);
+    private final ConnectWorker worker = new ConnectWorker(new VespaSinkTask(config -> client));
     private long offset;
 
     @BeforeEach
@@ -80,19 +78,18 @@ class VespaAvroSinkTaskTest {
 
         params.put(VespaSinkConfig.NAMESPACE_CONFIG, "ns");
         params.put(VespaSinkConfig.DOCUMENT_TYPE_CONFIG, "album");
-        task.initialize(mock(SinkTaskContext.class));
     }
 
     @AfterEach
     void after() {
-        task.stop();
+        worker.stop();
     }
 
     @Test
     void putsAvroRecordsAsVespaFields() {
-        task.start(params);
+        worker.start(params);
 
-        task.put(List.of(record("album-1", album())));
+        worker.put(List.of(record("album-1", album())));
 
         assertSent(client, "put id:ns:album::album-1 {\"fields\":{"
                 + "\"title\":\"Abbey Road\","
@@ -111,18 +108,18 @@ class VespaAvroSinkTaskTest {
 
     @Test
     void removesDocumentsOnAvroTombstones() {
-        task.start(params);
+        worker.start(params);
 
-        task.put(List.of(record("album-1", null)));
+        worker.put(List.of(record("album-1", null)));
 
         assertSent(client, "remove id:ns:album::album-1");
     }
 
     @Test
     void usesAvroLongKeysAsDocumentIds() {
-        task.start(params);
+        worker.start(params);
 
-        task.put(List.of(record(42L, album())));
+        worker.put(List.of(record(42L, album())));
 
         assertEquals(List.of(DocumentId.of("id:ns:album::42")),
                 client.operations().stream().map(operation -> operation.documentId).collect(Collectors.toList()));
@@ -132,9 +129,9 @@ class VespaAvroSinkTaskTest {
     void treatsAvroRecordKeysAsInvalidMessages() {
         GenericRecord key = new GenericData.Record(KEY);
         key.put("id", "album-1");
-        task.start(params);
+        worker.start(params);
 
-        assertThrows(ConnectException.class, () -> task.put(List.of(record(key, album()))));
+        assertThrows(ConnectException.class, () -> worker.put(List.of(record(key, album()))));
         assertNothingSent(client);
     }
 
@@ -147,9 +144,9 @@ class VespaAvroSinkTaskTest {
         GenericRecord put = new GenericData.Record(RAW_PUT);
         put.put("put", "id:ns:album::album-1");
         put.put("fields", fields);
-        task.start(params);
+        worker.start(params);
 
-        task.put(List.of(record("album-1", put)));
+        worker.put(List.of(record("album-1", put)));
 
         assertSent(client, "put id:ns:album::album-1 {\"fields\":{\"title\":\"Abbey Road\",\"year\":1969}}");
     }

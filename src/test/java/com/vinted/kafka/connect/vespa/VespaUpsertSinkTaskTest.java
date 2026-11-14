@@ -10,18 +10,12 @@ import com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.DataException;
-import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
-import org.apache.kafka.connect.sink.SinkTaskContext;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertNothingSent;
 import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertSent;
@@ -33,33 +27,17 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 public class VespaUpsertSinkTaskTest {
     private long offset = 1;
     private final Map<String, String> params = new HashMap<>();
     private RecordingFeedClient client = new RecordingFeedClient();
-    private final VespaSinkTask task = new VespaSinkTask(config -> client);
+    private final ConnectWorker worker = new ConnectWorker(new VespaSinkTask(config -> client));
     private final String topic = UUID.randomUUID().toString();
-    private final SinkTaskContext context = mock(SinkTaskContext.class);
-    private final ErrantRecordReporter reporter = mock(ErrantRecordReporter.class);
-
-    @BeforeEach
-    void before() {
-        when(context.errantRecordReporter()).thenReturn(reporter);
-        task.initialize(context);
-    }
 
     @AfterEach
     void after() {
-        this.task.stop();
+        worker.stop();
     }
 
     @Test
@@ -67,9 +45,9 @@ public class VespaUpsertSinkTaskTest {
         params.put(VespaSinkConfig.NAMESPACE_CONFIG, "test_namespace");
         params.put(VespaSinkConfig.DOCUMENT_TYPE_CONFIG, "test_document_type");
 
-        task.start(params);
+        worker.start(params);
 
-        task.put(Arrays.asList(
+        worker.put(Arrays.asList(
                 record("set1", "{\"field\":\"value1\"}"),
                 record("set2", "{\"field\":\"value2\"}"),
                 record("delete1", null)
@@ -86,9 +64,9 @@ public class VespaUpsertSinkTaskTest {
         params.put(VespaSinkConfig.NAMESPACE_CONFIG, "ns");
         params.put(VespaSinkConfig.DOCUMENT_TYPE_CONFIG, "dt");
 
-        task.start(params);
+        worker.start(params);
 
-        task.put(Arrays.asList(
+        worker.put(Arrays.asList(
                 record("a", "{\"v\":1}"),
                 record("b", "{\"v\":1}"),
                 record("a", "{\"v\":2}"),
@@ -110,8 +88,8 @@ public class VespaUpsertSinkTaskTest {
         params.put(VespaSinkConfig.OPERATION_CONDITION_CONFIG, "dt.locked == false");
         params.put(VespaSinkConfig.OPERATION_CREATE_IF_NON_EXISTENT_CONFIG, "true");
 
-        task.start(params);
-        task.put(Arrays.asList(record("set1", "{\"field\":\"value1\"}"), record("delete1", null)));
+        worker.start(params);
+        worker.put(Arrays.asList(record("set1", "{\"field\":\"value1\"}"), record("delete1", null)));
 
         assertSent(client, "put id:ns:dt::set1 {\"fields\":{\"field\":\"value1\"}}", "remove id:ns:dt::delete1");
 
@@ -128,20 +106,20 @@ public class VespaUpsertSinkTaskTest {
     void failsInsteadOfHangingWhenConditionIsNotMet() {
         client.answerAll(result(Result.Type.conditionNotMet));
 
-        task.start(params);
+        worker.start(params);
 
         assertTimeoutPreemptively(Duration.ofSeconds(10), () ->
-                assertThrows(ConnectException.class, () -> task.put(List.of(record("set1", "{\"field\":\"value1\"}")))));
+                assertThrows(ConnectException.class, () -> worker.put(List.of(record("set1", "{\"field\":\"value1\"}")))));
     }
 
     @Test
     void keepsTheCauseOfRejectedResults() {
         client.answerAll(result(Result.Type.conditionNotMet));
 
-        task.start(params);
+        worker.start(params);
 
         ConnectException thrown = assertThrows(ConnectException.class,
-                () -> task.put(List.of(record("set1", "{\"field\":\"value1\"}"))));
+                () -> worker.put(List.of(record("set1", "{\"field\":\"value1\"}"))));
         assertInstanceOf(FeedException.class, thrown.getCause());
         assertTrue(thrown.getMessage().startsWith("rejected result in 1 operation"), thrown.getMessage());
     }
@@ -150,12 +128,12 @@ public class VespaUpsertSinkTaskTest {
     void failsInsteadOfHangingWhenErrantRecordReporterThrows() {
         client.answerAll(result(Result.Type.conditionNotMet));
         params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
-        when(reporter.report(any(), any())).thenThrow(new ConnectException("Tolerance exceeded in error handler"));
+        worker.failingReports(new ConnectException("Tolerance exceeded in error handler"));
 
-        task.start(params);
+        worker.start(params);
 
         assertTimeoutPreemptively(Duration.ofSeconds(10), () ->
-                assertThrows(ConnectException.class, () -> task.put(List.of(record("set1", "{\"field\":\"value1\"}")))));
+                assertThrows(ConnectException.class, () -> worker.put(List.of(record("set1", "{\"field\":\"value1\"}")))));
     }
 
     @Test
@@ -166,14 +144,12 @@ public class VespaUpsertSinkTaskTest {
         client.answer("id:ns:dt::rejected", result(Result.Type.conditionNotMet));
         SinkRecord rejected = record("rejected", "{\"field\":\"value1\"}");
 
-        task.start(params);
+        worker.start(params);
         assertTimeoutPreemptively(Duration.ofSeconds(10), () ->
-                task.put(List.of(rejected, record("accepted", "{\"field\":\"value2\"}"))));
+                worker.put(List.of(rejected, record("accepted", "{\"field\":\"value2\"}"))));
 
-        ArgumentCaptor<Throwable> error = ArgumentCaptor.forClass(Throwable.class);
-        verify(reporter, times(1)).report(any(), any());
-        verify(reporter).report(eq(rejected), error.capture());
-        FeedException cause = assertInstanceOf(FeedException.class, error.getValue());
+        assertEquals(List.of(rejected), worker.reported());
+        FeedException cause = assertInstanceOf(FeedException.class, worker.reports().get(0).error);
         assertEquals(Optional.of(DocumentId.of("id:ns:dt::rejected")), cause.documentId());
     }
 
@@ -182,20 +158,14 @@ public class VespaUpsertSinkTaskTest {
         params.put(VespaSinkConfig.NAMESPACE_CONFIG, "ns");
         params.put(VespaSinkConfig.DOCUMENT_TYPE_CONFIG, "dt");
         params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
-        Queue<String> reports = new ConcurrentLinkedQueue<>();
-        when(context.errantRecordReporter()).thenReturn((record, error) -> {
-            reports.add(record.key() + " on " + Thread.currentThread().getName());
-            return CompletableFuture.completedFuture(null);
-        });
-
         try (CallbackExecutor callbacks = new CallbackExecutor(3)) {
             client = new RecordingFeedClient(callbacks)
                     .answer("id:ns:dt::malformed", failure(new FeedException("Status 400 executing 'POST /document/v1/': bad request")));
-            task.start(params);
+            worker.start(params);
 
-            task.put(List.of(record("before", "{}"), record("malformed", "{}"), record("after", "{}")));
+            worker.put(List.of(record("before", "{}"), record("malformed", "{}"), record("after", "{}")));
 
-            assertEquals(List.of("malformed on " + CallbackExecutor.THREAD_NAME), List.copyOf(reports));
+            assertEquals(List.of("malformed on " + CallbackExecutor.THREAD_NAME), worker.reportedKeysAndThreads());
         }
     }
 
@@ -204,10 +174,11 @@ public class VespaUpsertSinkTaskTest {
         params.put(VespaSinkConfig.DROP_INVALID_MESSAGE_CONFIG, "true");
         SinkRecord invalid = record(null, "{\"field\":\"value1\"}");
 
-        task.start(params);
-        task.put(Arrays.asList(invalid, record("set1", "{\"field\":\"value1\"}")));
+        worker.start(params);
+        worker.put(Arrays.asList(invalid, record("set1", "{\"field\":\"value1\"}")));
 
-        verify(reporter).report(eq(invalid), any(DataException.class));
+        assertEquals(List.of(invalid), worker.reported());
+        assertInstanceOf(DataException.class, worker.reports().get(0).error);
         assertSent(client, String.format("put id:%s:%s::set1 {\"fields\":{\"field\":\"value1\"}}", topic, topic));
     }
 
@@ -215,45 +186,48 @@ public class VespaUpsertSinkTaskTest {
     void reportsAndFailsOnInvalidMessagesByDefault() {
         SinkRecord invalid = record(null, "{\"field\":\"value1\"}");
 
-        task.start(params);
+        worker.start(params);
 
-        assertThrows(ConnectException.class, () -> task.put(List.of(invalid)));
-        verify(reporter).report(eq(invalid), any(DataException.class));
+        assertThrows(ConnectException.class, () -> worker.put(List.of(invalid)));
+        assertEquals(List.of(invalid), worker.reported());
+        assertInstanceOf(DataException.class, worker.reports().get(0).error);
         assertNothingSent(client);
     }
 
     @Test
     void doesNotReportSuccessfulRecords() {
-        task.start(params);
-        task.put(List.of(record("set1", "{\"field\":\"value1\"}")));
+        worker.start(params);
+        worker.put(List.of(record("set1", "{\"field\":\"value1\"}")));
 
-        verify(reporter, never()).report(any(), any());
+        assertEquals(List.of(), worker.reported());
     }
 
     @Test
     void feedsWithoutErrantRecordReporter() {
-        when(context.errantRecordReporter()).thenReturn(null);
+        worker.withoutReporter();
 
-        task.start(params);
-        task.put(List.of(record("set1", "{\"field\":\"value1\"}")));
+        worker.start(params);
+        worker.put(List.of(record("set1", "{\"field\":\"value1\"}")));
 
         assertSent(client, String.format("put id:%s:%s::set1 {\"fields\":{\"field\":\"value1\"}}", topic, topic));
     }
 
     @Test
     void startsOnRuntimesWithoutErrantRecordReporter() {
-        doThrow(new NoSuchMethodError()).when(context).errantRecordReporter();
-        task.start(params);
+        worker.withoutReporterSupport(new NoSuchMethodError()).start(params);
+        worker.put(List.of(record("set1", "{\"field\":\"value1\"}")));
 
-        doThrow(new NoClassDefFoundError()).when(context).errantRecordReporter();
-        task.start(params);
+        worker.withoutReporterSupport(new NoClassDefFoundError()).restart(params);
+        worker.put(List.of(record("set2", "{\"field\":\"value2\"}")));
+
+        assertEquals(2, client.operations().size());
     }
 
     @Test
     void writesDocumentsWithTopicNameToVespa() {
-        task.start(params);
+        worker.start(params);
 
-        task.put(Arrays.asList(record("set1", "{\"field\":\"value1\"}"), record("delete1", null)));
+        worker.put(Arrays.asList(record("set1", "{\"field\":\"value1\"}"), record("delete1", null)));
 
         assertSent(client,
                 String.format("put id:%s:%s::set1 {\"fields\":{\"field\":\"value1\"}}", topic, topic),
