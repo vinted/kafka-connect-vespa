@@ -3,7 +3,6 @@ package com.vinted.kafka.connect.vespa;
 import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.FeedClient;
 import ai.vespa.feed.client.Result;
-import org.apache.kafka.connect.errors.RetriableException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import com.vinted.kafka.connect.vespa.mocks.MockVespaServer;
 import org.junit.jupiter.api.AfterEach;
@@ -13,7 +12,6 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -88,7 +86,7 @@ class FeedPerformanceTest {
     @Test
     void feedClientAlone() throws Exception {
         assumeTrue(!STUB, "the stub replaces the feed client");
-        VespaSinkConfig config = new VespaSinkConfig(connectorProps(Map.of()));
+        VespaSinkConfig config = new VespaSinkConfig(PerformanceRecords.connectorProps(endpoint, Map.of()));
         List<PerformanceRecords.Document> documents = PerformanceRecords.documents(WARMUP_RECORDS + RECORDS);
 
         try (FeedClient client = config.feedClient()) {
@@ -108,23 +106,21 @@ class FeedPerformanceTest {
         List<SinkRecord> warmup = factory.records(documents.subList(0, WARMUP_RECORDS), 0);
         List<SinkRecord> measured = factory.records(documents.subList(WARMUP_RECORDS, documents.size()), WARMUP_RECORDS);
 
-        BenchmarkContext context = new BenchmarkContext();
         VespaSinkTask task = STUB ? new VespaSinkTask(config -> new AcknowledgingFeedClient()) : new VespaSinkTask();
-        task.initialize(context);
-        task.start(connectorProps(overrides));
+        ConnectWorker worker = new ConnectWorker(task).start(PerformanceRecords.connectorProps(endpoint, overrides));
 
         try {
-            deliver(task, context, warmup);
+            worker.deliver(warmup, BATCH);
             clear();
 
             Measurement measurement = Measurement.start();
             List<Long> latencies = new ArrayList<>();
             for (int pass = 0; pass < PASSES; pass++) {
-                latencies.addAll(deliver(task, context, measured));
+                latencies.addAll(worker.deliver(measured, BATCH));
             }
             measurement.stop(name, RECORDS * PASSES, latencies);
         } finally {
-            task.stop();
+            worker.stop();
         }
 
         assertIndexed(RECORDS);
@@ -142,29 +138,6 @@ class FeedPerformanceTest {
         }
 
         assertEquals(records, vespa.count());
-    }
-
-    /** Puts the records in batches, redelivering a batch after the backoff the task asks for, as Connect does. */
-    static List<Long> deliver(VespaSinkTask task, BenchmarkContext context, List<SinkRecord> records) throws InterruptedException {
-        List<Long> latencies = new ArrayList<>();
-        for (int from = 0; from < records.size(); from += BATCH) {
-            List<SinkRecord> batch = records.subList(from, Math.min(records.size(), from + BATCH));
-            long start = System.nanoTime();
-            deliverBatch(task, context, batch);
-            latencies.add(System.nanoTime() - start);
-        }
-        return latencies;
-    }
-
-    static void deliverBatch(VespaSinkTask task, BenchmarkContext context, List<SinkRecord> batch) throws InterruptedException {
-        while (true) {
-            try {
-                task.put(batch);
-                return;
-            } catch (RetriableException e) {
-                Thread.sleep(context.takeTimeoutMs());
-            }
-        }
     }
 
     /** Puts every document with all of them in flight, sending those that failed again, as the task's retries do. */
@@ -185,18 +158,6 @@ class FeedPerformanceTest {
             }
             pending = failed;
         }
-    }
-
-    private Map<String, String> connectorProps(Map<String, String> overrides) {
-        Map<String, String> props = new HashMap<>();
-        props.put(VespaSinkConfig.ENDPOINT_CONFIG, endpoint);
-        props.put(VespaSinkConfig.NAMESPACE_CONFIG, "perf");
-        props.put(VespaSinkConfig.DOCUMENT_TYPE_CONFIG, "item");
-        System.getProperties().stringPropertyNames().stream()
-                .filter(name -> name.startsWith("vespa.perf.connector."))
-                .forEach(name -> props.put(name.substring("vespa.perf.connector.".length()), System.getProperty(name)));
-        props.putAll(overrides);
-        return props;
     }
 
     /** Wall time, process CPU and put latencies of one measured feed. */

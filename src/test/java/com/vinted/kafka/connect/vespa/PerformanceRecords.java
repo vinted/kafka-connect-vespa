@@ -6,7 +6,9 @@ import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.sink.SinkRecord;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -15,6 +17,7 @@ import java.util.stream.IntStream;
 final class PerformanceRecords {
     static final String TOPIC = "items";
     private static final int PARTITIONS = 6;
+    private static final String CONNECTOR_PROPERTY = "vespa.perf.connector.";
     private static final String[] WORDS = ("vintage dress cotton blue leather jacket size small medium large summer "
             + "winter wool shoes boots black white red green bag handmade new worn once perfect condition brand "
             + "original classic retro denim jeans shirt silk scarf gold silver ring necklace watch").split(" ");
@@ -69,6 +72,22 @@ final class PerformanceRecords {
                     title, description, brand, tags.stream().map(tag -> "\"" + tag + "\"").collect(Collectors.joining(",")),
                     price, views, locked);
         }
+    }
+
+    /**
+     * Settings of a connector that feeds these records to the endpoint, with any {@code vespa.perf.connector.*}
+     * system property as a connector setting, and the overrides on top.
+     */
+    static Map<String, String> connectorProps(String endpoint, Map<String, String> overrides) {
+        Map<String, String> props = new HashMap<>();
+        props.put(VespaSinkConfig.ENDPOINT_CONFIG, endpoint);
+        props.put(VespaSinkConfig.NAMESPACE_CONFIG, "perf");
+        props.put(VespaSinkConfig.DOCUMENT_TYPE_CONFIG, "item");
+        System.getProperties().stringPropertyNames().stream()
+                .filter(name -> name.startsWith(CONNECTOR_PROPERTY))
+                .forEach(name -> props.put(name.substring(CONNECTOR_PROPERTY.length()), System.getProperty(name)));
+        props.putAll(overrides);
+        return props;
     }
 
     static List<Document> documents(int count) {

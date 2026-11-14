@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -24,9 +24,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 class FeedUnderLoadTest {
     private static final String ENDPOINT = System.getProperty("vespa.perf.endpoint");
     private static final int RECORDS = Integer.getInteger("vespa.perf.records", 200_000);
+    private static final int BATCH = Integer.getInteger("vespa.perf.batch", 500);
     private static final String OUTAGE_COMMAND = System.getProperty("vespa.perf.outage.command");
 
-    private final BenchmarkContext context = new BenchmarkContext();
     private VespaAdmin vespa;
 
     @BeforeEach
@@ -47,10 +47,10 @@ class FeedUnderLoadTest {
             malformed += isMalformed ? 1 : 0;
         }
 
-        feed(Map.of(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE"), records);
+        ConnectWorker worker = feed(Map.of(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE"), records);
 
         assertEquals(RECORDS - malformed, vespa.count());
-        assertEquals(malformed, context.reported());
+        assertEquals(malformed, worker.reports().size());
     }
 
     @Test
@@ -90,54 +90,37 @@ class FeedUnderLoadTest {
         assumeTrue(OUTAGE_COMMAND != null, "set vespa.perf.outage.command to a command that restarts Vespa");
         PerformanceRecords.Factory jsonStrings = PerformanceRecords::jsonString;
         List<SinkRecord> records = jsonStrings.records(PerformanceRecords.documents(RECORDS), 0);
-        int batch = Integer.getInteger("vespa.perf.batch", 500);
-        int outageAt = records.size() / 4 / batch * batch;
-        VespaSinkTask task = start(Map.of());
-        CompletableFuture<Void> outage = CompletableFuture.completedFuture(null);
-        long slowestBatchNanos = 0;
+        List<SinkRecord> head = records.subList(0, records.size() / 4);
+        List<SinkRecord> tail = records.subList(head.size(), records.size());
+        ConnectWorker worker = start(Map.of());
+        List<Long> nanos = new ArrayList<>();
 
         try {
-            for (int from = 0; from < records.size(); from += batch) {
-                if (from == outageAt) {
-                    outage = CompletableFuture.runAsync(FeedUnderLoadTest::restartVespa);
-                }
-                long start = System.nanoTime();
-                FeedPerformanceTest.deliverBatch(task, context, records.subList(from, Math.min(records.size(), from + batch)));
-                slowestBatchNanos = Math.max(slowestBatchNanos, System.nanoTime() - start);
-            }
+            nanos.addAll(worker.deliver(head, BATCH));
+            CompletableFuture<Void> outage = CompletableFuture.runAsync(FeedUnderLoadTest::restartVespa);
+            nanos.addAll(worker.deliver(tail, BATCH));
+            outage.join();
         } finally {
-            task.stop();
+            worker.stop();
         }
 
-        outage.join();
         System.out.printf("%n[performance] outage: %d redeliveries, slowest batch %.1f s%n",
-                context.redeliveries(), slowestBatchNanos / 1e9);
+                worker.redeliveries(), Collections.max(nanos) / 1e9);
         assertEquals(RECORDS, vespa.count());
     }
 
-    private void feed(Map<String, String> overrides, List<SinkRecord> records) throws InterruptedException {
-        VespaSinkTask task = start(overrides);
+    private ConnectWorker feed(Map<String, String> overrides, List<SinkRecord> records) throws InterruptedException {
+        ConnectWorker worker = start(overrides);
         try {
-            FeedPerformanceTest.deliver(task, context, records);
+            worker.deliver(records, BATCH);
         } finally {
-            task.stop();
+            worker.stop();
         }
+        return worker;
     }
 
-    private VespaSinkTask start(Map<String, String> overrides) {
-        Map<String, String> props = new HashMap<>();
-        props.put(VespaSinkConfig.ENDPOINT_CONFIG, ENDPOINT);
-        props.put(VespaSinkConfig.NAMESPACE_CONFIG, "perf");
-        props.put(VespaSinkConfig.DOCUMENT_TYPE_CONFIG, "item");
-        System.getProperties().stringPropertyNames().stream()
-                .filter(name -> name.startsWith("vespa.perf.connector."))
-                .forEach(name -> props.put(name.substring("vespa.perf.connector.".length()), System.getProperty(name)));
-        props.putAll(overrides);
-
-        VespaSinkTask task = new VespaSinkTask();
-        task.initialize(context);
-        task.start(props);
-        return task;
+    private static ConnectWorker start(Map<String, String> overrides) {
+        return new ConnectWorker(new VespaSinkTask()).start(PerformanceRecords.connectorProps(ENDPOINT, overrides));
     }
 
     private static void restartVespa() {

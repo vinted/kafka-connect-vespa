@@ -6,9 +6,7 @@ import com.vinted.kafka.connect.vespa.mocks.RecordingFeedClient;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.DataException;
-import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
-import org.apache.kafka.connect.sink.SinkTaskContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,20 +17,14 @@ import java.util.*;
 import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertNothingSent;
 import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertSent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 public class VespaRawSinkTaskTest {
     private long offset = 1;
     private final Map<String, String> params = new HashMap<>();
     private final RecordingFeedClient client = new RecordingFeedClient();
-    private final VespaSinkTask task = new VespaSinkTask(config -> client);
-    private final ErrantRecordReporter reporter = mock(ErrantRecordReporter.class);
+    private final ConnectWorker worker = new ConnectWorker(new VespaSinkTask(config -> client));
 
     @BeforeEach
     void before() {
@@ -40,15 +32,12 @@ public class VespaRawSinkTaskTest {
         params.put(VespaSinkConfig.DOCUMENT_TYPE_CONFIG, "test_document_type");
         params.put(VespaSinkConfig.OPERATIONAL_MODE_CONFIG, VespaSinkConfig.OperationalMode.RAW.name());
         params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, VespaSinkConfig.BehaviorOnMalformedDoc.WARN.name());
-        SinkTaskContext context = mock(SinkTaskContext.class);
-        when(context.errantRecordReporter()).thenReturn(reporter);
-        task.initialize(context);
-        task.start(params);
+        worker.start(params);
     }
 
     @AfterEach
     void after() {
-        this.task.stop();
+        worker.stop();
     }
 
     @Test
@@ -57,7 +46,7 @@ public class VespaRawSinkTaskTest {
                 record("set1", "{\"put\":\"id:test_namespace:test_document_type::set1\",\"fields\":{\"field\":\"value1\"}}")
         );
 
-        task.put(records);
+        worker.put(records);
 
         assertSent(client, "put id:test_namespace:test_document_type::set1 {\"fields\":{\"field\":\"value1\"}}");
     }
@@ -68,14 +57,14 @@ public class VespaRawSinkTaskTest {
                 record("del2", "{\"remove\":\"id:test_namespace:test_document_type::del2\"}")
         );
 
-        task.put(records);
+        worker.put(records);
 
         assertSent(client, "remove id:test_namespace:test_document_type::del2");
     }
 
     @Test
     void sendsEveryOperationInOrderEvenForTheSameDocument() {
-        task.put(Arrays.asList(
+        worker.put(Arrays.asList(
                 record("doc", "{\"put\":\"id:test_namespace:test_document_type::doc\",\"fields\":{\"n\":1}}"),
                 record("doc", "{\"update\":\"id:test_namespace:test_document_type::doc\",\"fields\":{\"n\":{\"increment\":1}}}"),
                 record("doc", "{\"remove\":\"id:test_namespace:test_document_type::doc\"}"),
@@ -94,18 +83,17 @@ public class VespaRawSinkTaskTest {
         SinkRecord malformedPut = record("set1", "{put\":\"id:test_namespace:test_document_type::set1\"}");
         SinkRecord malformedRemove = record("del2", "{remove\":\"id:test_namespace:test_document_type::del2\"}");
 
-        task.put(Arrays.asList(malformedPut, malformedRemove));
+        worker.put(Arrays.asList(malformedPut, malformedRemove));
 
-        verify(reporter).report(eq(malformedPut), any());
-        verify(reporter).report(eq(malformedRemove), any());
+        assertEquals(List.of(malformedPut, malformedRemove), worker.reported());
         assertNothingSent(client);
     }
 
     @Test
     void skipsTombstones() {
-        task.put(Collections.singletonList(record("set1", null)));
+        worker.put(Collections.singletonList(record("set1", null)));
 
-        verify(reporter, never()).report(any(), any());
+        assertEquals(List.of(), worker.reported());
         assertNothingSent(client);
     }
 
@@ -116,9 +104,9 @@ public class VespaRawSinkTaskTest {
                 record("set2", "{\"put\":\"id:test_namespace:test_document_type::set2\",\"fields\":{\"field\":\"value2\"}}")
         );
 
-        task.put(records);
+        worker.put(records);
 
-        verify(reporter, never()).report(any(), any());
+        assertEquals(List.of(), worker.reported());
         assertSent(client, "put id:test_namespace:test_document_type::set2 {\"fields\":{\"field\":\"value2\"}}");
     }
 
@@ -127,7 +115,7 @@ public class VespaRawSinkTaskTest {
         params.put(VespaSinkConfig.OPERATION_CONDITION_CONFIG, "test_document_type.locked == false");
         restart();
 
-        task.put(Arrays.asList(
+        worker.put(Arrays.asList(
                 record("set1", "{\"put\":\"id:test_namespace:test_document_type::set1\",\"fields\":{}}"),
                 record("set2", "{\"put\":\"id:test_namespace:test_document_type::set2\",\"condition\":\"test_document_type.n > 1\",\"fields\":{}}")
         ));
@@ -148,9 +136,10 @@ public class VespaRawSinkTaskTest {
         restart();
         SinkRecord invalid = unconvertible();
 
-        task.put(Arrays.asList(invalid, record("set1", "{\"put\":\"id:test_namespace:test_document_type::set1\",\"fields\":{}}")));
+        worker.put(Arrays.asList(invalid, record("set1", "{\"put\":\"id:test_namespace:test_document_type::set1\",\"fields\":{}}")));
 
-        verify(reporter).report(eq(invalid), any(DataException.class));
+        assertEquals(List.of(invalid), worker.reported());
+        assertInstanceOf(DataException.class, worker.reports().get(0).error);
         assertSent(client, "put id:test_namespace:test_document_type::set1 {\"fields\":{}}");
     }
 
@@ -160,15 +149,15 @@ public class VespaRawSinkTaskTest {
         List<SinkRecord> records = Arrays.asList(
                 record("set1", "{\"put\":\"id:test_namespace:test_document_type::set1\",\"fields\":{}}"), invalid);
 
-        assertThrows(ConnectException.class, () -> task.put(records));
+        assertThrows(ConnectException.class, () -> worker.put(records));
 
-        verify(reporter).report(eq(invalid), any(DataException.class));
+        assertEquals(List.of(invalid), worker.reported());
+        assertInstanceOf(DataException.class, worker.reports().get(0).error);
         assertNothingSent(client);
     }
 
     private void restart() {
-        task.stop();
-        task.start(params);
+        worker.restart(params);
     }
 
     private SinkRecord unconvertible() {
