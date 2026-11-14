@@ -7,6 +7,7 @@ import ai.vespa.feed.client.Result;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.vinted.kafka.connect.vespa.CapturedLogs;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
+import com.vinted.kafka.connect.vespa.VespaSinkConfig.BehaviorOnMalformedDoc;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Failure;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Kind;
 import com.vinted.kafka.connect.vespa.mocks.FakeFeedClient;
@@ -20,7 +21,6 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
@@ -184,9 +184,7 @@ class IndexingResultHandlerTest {
     }
 
     private CompletableFuture<Optional<Failure>> handle(String behaviorOnMalformedDocs, CompletableFuture<Result> future) {
-        VespaSinkConfig config = new VespaSinkConfig(
-                Map.of(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, behaviorOnMalformedDocs));
-        return new IndexingResultHandler(config, reporter).handle(record, future);
+        return new IndexingResultHandler(BehaviorOnMalformedDoc.valueOf(behaviorOnMalformedDocs), reporter).handle(record, future);
     }
 
     // As Kafka's RetryWithToleranceOperator throws it under errors.tolerance=none.

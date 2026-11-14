@@ -1,4 +1,4 @@
-package com.vinted.kafka.connect.vespa;
+package com.vinted.kafka.connect.vespa.feeders;
 
 import java.time.Duration;
 import java.util.concurrent.ThreadLocalRandom;

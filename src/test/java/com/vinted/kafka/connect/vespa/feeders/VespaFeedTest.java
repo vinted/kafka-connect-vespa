@@ -32,7 +32,7 @@ class VespaFeedTest {
     void failsWithEveryFailedOperationEvenWhenItIsNotAFeedException() {
         IllegalStateException closed = new IllegalStateException("Client is closed");
         client.answerAll(failure(closed));
-        VespaFeed feed = VespaFeed.open(config, NO_REPORTER, () -> client);
+        VespaFeed feed = VespaFeed.open(config, NO_REPORTER, () -> client, backoffMs -> { });
 
         VespaFeedException thrown = assertThrows(VespaFeedException.class,
                 () -> feed.feed(List.of(record("key-1"), record("key-2"))));
@@ -45,7 +45,7 @@ class VespaFeedTest {
     void failsEveryOperationTheClientRefusesInsteadOfLosingTheOthers() {
         IllegalStateException closed = new IllegalStateException("Client is closed");
         FakeFeedClient refusing = new FakeFeedClient().answerAll(refusal(closed));
-        VespaFeed feed = VespaFeed.open(config, NO_REPORTER, () -> refusing);
+        VespaFeed feed = VespaFeed.open(config, NO_REPORTER, () -> refusing, backoffMs -> { });
 
         VespaFeedException thrown = assertThrows(VespaFeedException.class,
                 () -> feed.feed(List.of(record("key-1"), record("key-2"))));
@@ -55,7 +55,7 @@ class VespaFeedTest {
 
     @Test
     void closesTheFeedClient() throws IOException {
-        VespaFeed feed = VespaFeed.open(config, NO_REPORTER, () -> client);
+        VespaFeed feed = VespaFeed.open(config, NO_REPORTER, () -> client, backoffMs -> { });
 
         feed.close();
 

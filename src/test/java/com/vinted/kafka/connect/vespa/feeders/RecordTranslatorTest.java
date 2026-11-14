@@ -1,6 +1,5 @@
 package com.vinted.kafka.connect.vespa.feeders;
 
-import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentJson;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.DataException;
@@ -9,7 +8,6 @@ import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -71,10 +69,7 @@ class RecordTranslatorTest {
     }
 
     private RecordTranslator<DocumentJson> translator(boolean dropInvalidMessage) {
-        VespaSinkConfig config = new VespaSinkConfig(
-                Map.of(VespaSinkConfig.DROP_INVALID_MESSAGE_CONFIG, String.valueOf(dropInvalidMessage)));
-
-        return new RecordTranslator<>(config, reporter) {
+        return new RecordTranslator<>(dropInvalidMessage, reporter) {
             @Override
             Optional<DocumentJson> translate(SinkRecord record) {
                 if ("invalid".equals(record.value())) {

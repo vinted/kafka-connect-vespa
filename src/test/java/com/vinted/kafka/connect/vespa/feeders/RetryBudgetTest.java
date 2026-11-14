@@ -1,6 +1,6 @@
-package com.vinted.kafka.connect.vespa;
+package com.vinted.kafka.connect.vespa.feeders;
 
-import com.vinted.kafka.connect.vespa.feeders.VespaFeedException;
+import ai.vespa.feed.client.FeedException;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.errors.RetriableException;
@@ -14,8 +14,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static com.vinted.kafka.connect.vespa.feeders.FeedFailures.fatalFailure;
-import static com.vinted.kafka.connect.vespa.feeders.FeedFailures.transientFailure;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -146,6 +144,16 @@ class RetryBudgetTest {
         return records -> {
             throw failure;
         };
+    }
+
+    private static VespaFeedException transientFailure() {
+        return new VespaFeedException(VespaFeedException.Kind.TRANSIENT,
+                new FeedException("Status 503 executing 'POST /document/v1/': unavailable"));
+    }
+
+    private static VespaFeedException fatalFailure() {
+        return new VespaFeedException(VespaFeedException.Kind.FATAL,
+                new FeedException("Status 401 executing 'POST /document/v1/': unauthorized"));
     }
 
     private static SinkRecord record(String topic, int partition, long offset) {

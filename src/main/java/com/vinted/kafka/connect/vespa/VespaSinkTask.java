@@ -22,7 +22,6 @@ public class VespaSinkTask extends SinkTask {
 
     private final Function<VespaSinkConfig, FeedClient> clients;
     private VespaFeed feed;
-    private RetryBudget retryBudget;
 
     public VespaSinkTask() {
         this(VespaSinkConfig::feedClient);
@@ -38,10 +37,9 @@ public class VespaSinkTask extends SinkTask {
 
         ErrantRecordReporter reporter = errantRecordReporter();
         VespaSinkConfig config = new VespaSinkConfig(props);
-        this.retryBudget = config.retryBudget(context::timeout);
         log.info("Using {} operational mode.", config.operationalMode());
 
-        this.feed = VespaFeed.open(config, retryBudget.reportingOnce(reporter), () -> clients.apply(config));
+        this.feed = VespaFeed.open(config, reporter, () -> clients.apply(config), context::timeout);
     }
 
     private ErrantRecordReporter errantRecordReporter() {
@@ -67,7 +65,7 @@ public class VespaSinkTask extends SinkTask {
         }
 
         log.debug("Putting {} records.", collection.size());
-        retryBudget.deliver(collection, feed::feed);
+        feed.deliver(collection);
     }
 
     @Override
