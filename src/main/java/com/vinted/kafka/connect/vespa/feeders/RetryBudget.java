@@ -1,7 +1,6 @@
-package com.vinted.kafka.connect.vespa;
+package com.vinted.kafka.connect.vespa.feeders;
 
-import com.vinted.kafka.connect.vespa.feeders.RecordCoordinates;
-import com.vinted.kafka.connect.vespa.feeders.VespaFeedException;
+import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.RetriableException;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;

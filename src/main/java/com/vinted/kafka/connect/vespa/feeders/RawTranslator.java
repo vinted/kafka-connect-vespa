@@ -1,6 +1,5 @@
 package com.vinted.kafka.connect.vespa.feeders;
 
-import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentJson;
 import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
@@ -18,8 +17,8 @@ import java.util.Optional;
 final class RawTranslator extends RecordTranslator<DocumentJson> {
     private static final Logger log = LoggerFactory.getLogger(RawTranslator.class);
 
-    RawTranslator(VespaSinkConfig config, ErrantRecordReporter reporter) {
-        super(config, reporter);
+    RawTranslator(boolean dropInvalidMessage, ErrantRecordReporter reporter) {
+        super(dropInvalidMessage, reporter);
     }
 
     @Override

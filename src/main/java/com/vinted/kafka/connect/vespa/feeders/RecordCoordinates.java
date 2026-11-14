@@ -8,7 +8,7 @@ import java.util.Objects;
  * A record's topic, partition and offset: how the connector identifies a record. Its key and value may hold sensitive
  * data, so they never go into logs or exception messages; the errant record reporter is where the full record goes.
  */
-public final class RecordCoordinates {
+final class RecordCoordinates {
     private final String topic;
     private final Integer partition;
     private final long offset;
@@ -19,7 +19,7 @@ public final class RecordCoordinates {
         this.offset = offset;
     }
 
-    public static RecordCoordinates of(SinkRecord record) {
+    static RecordCoordinates of(SinkRecord record) {
         return new RecordCoordinates(record.topic(), record.kafkaPartition(), record.kafkaOffset());
     }
 
