@@ -46,7 +46,7 @@ final class UpsertTranslator extends RecordTranslator<DocumentOperation> {
             throw new DataException("Value is empty; only a null value removes the document.");
         }
 
-        return Optional.of(new Put(record, documentId, String.format("{\"fields\":%s}", value), putParameters));
+        return Optional.of(new Put(record, documentId, "{\"fields\":" + value + "}", putParameters));
     }
 
     /** Keeps only the last operation per document. */
