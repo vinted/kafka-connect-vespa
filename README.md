@@ -95,7 +95,8 @@ transform to change their unit. Unions of more than one non-null type, and Avro 
 are rejected by Vespa as malformed documents; drop such fields with the `ReplaceField` transform or set Vespa's
 `ignore-undefined-fields`.
 
-Keys must be strings or integers, as with any converter. A record key is an invalid message; extract a field with the
+Keys must be strings or integers, as with any converter. Date, time and timestamp keys become the number of days or
+milliseconds the table above gives their values. A record key is an invalid message; extract a field with the
 `ExtractField$Key` transform instead.
 
 ### Configuration
