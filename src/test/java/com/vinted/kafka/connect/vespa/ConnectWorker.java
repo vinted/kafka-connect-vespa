@@ -1,5 +1,6 @@
 package com.vinted.kafka.connect.vespa;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -8,6 +9,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.connect.errors.RetriableException;
@@ -28,6 +30,9 @@ final class ConnectWorker {
   private volatile RuntimeException reportFailure;
   private volatile Error runtimeWithoutReporter;
   private volatile long pendingBackoffMs;
+  private volatile Duration reportDuration = Duration.ZERO;
+  private final AtomicInteger reporting = new AtomicInteger();
+  private final AtomicInteger mostConcurrentReports = new AtomicInteger();
   private boolean started;
 
   /** What one call to the errant record reporter received, and on which thread. */
@@ -139,6 +144,20 @@ final class ConnectWorker {
     return this;
   }
 
+  /**
+   * Makes every report take this long, so reports from different threads overlap unless the task
+   * makes them one at a time.
+   */
+  ConnectWorker reportsTaking(Duration duration) {
+    this.reportDuration = duration;
+    return this;
+  }
+
+  /** The most reports the errant record reporter was handling at once. */
+  int mostConcurrentReports() {
+    return mostConcurrentReports.get();
+  }
+
   /** Leaves the errant record reporter unset, as without a dead letter queue or error log. */
   ConnectWorker withoutReporter() {
     this.reporterAccess = ReporterAccess.ABSENT;
@@ -163,8 +182,17 @@ final class ConnectWorker {
     if (failure != null) {
       throw failure;
     }
-    reports.add(new Report(record, error, Thread.currentThread().getName()));
-    return CompletableFuture.completedFuture(null);
+    mostConcurrentReports.accumulateAndGet(reporting.incrementAndGet(), Math::max);
+    try {
+      Thread.sleep(reportDuration.toMillis());
+      reports.add(new Report(record, error, Thread.currentThread().getName()));
+      return CompletableFuture.completedFuture(null);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(e);
+    } finally {
+      reporting.decrementAndGet();
+    }
   }
 
   private final class Context implements SinkTaskContext {
