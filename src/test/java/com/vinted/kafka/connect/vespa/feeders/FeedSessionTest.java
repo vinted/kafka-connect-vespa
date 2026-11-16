@@ -97,6 +97,15 @@ class FeedSessionTest {
   }
 
   @Test
+  void submitsNoOperationsWithoutBuildingClient() {
+    Clients clients = new Clients(HANDSHAKE_FAILED);
+    FeedSession session = FeedSession.open(clients);
+
+    assertEquals(List.of(), session.submit(List.of()));
+    assertEquals(1, clients.built);
+  }
+
+  @Test
   void failsToOpenOnOtherClientErrors() {
     UncheckedIOException missingCertificate =
         new UncheckedIOException(new NoSuchFileException("client.pem"));

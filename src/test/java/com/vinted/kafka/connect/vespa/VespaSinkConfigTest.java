@@ -41,7 +41,19 @@ class VespaSinkConfigTest {
   }
 
   @Test
+  void acceptsOperationalModeAndBehaviorOnMalformedDocumentsInAnyCase() {
+    params.put(VespaSinkConfig.OPERATIONAL_MODE_CONFIG, "raw");
+    params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "Warn");
+    VespaSinkConfig config = new VespaSinkConfig(params);
+
+    assertEquals(VespaSinkConfig.OperationalMode.RAW, config.operationalMode());
+    assertEquals(VespaSinkConfig.BehaviorOnMalformedDoc.WARN, config.behaviorOnMalformedDoc());
+  }
+
+  @Test
   void rejectsInvalidValues() {
+    assertInvalid("vespa.operational.mode", "rawr");
+    assertInvalid("vespa.behavior.on.malformed.documents", "skip");
     assertInvalid("vespa.compression", "zstd");
     assertInvalid("vespa.initial.inflight.factor", "0");
     assertInvalid("vespa.connection.ttl.ms", "-1");
