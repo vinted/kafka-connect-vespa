@@ -48,8 +48,8 @@ public class VespaSinkConfig extends AbstractConfig {
   public static final String ENDPOINT_CONFIG = "vespa.endpoint";
   private static final String ENDPOINT_DOC =
       "The comma-separated list of one or more Vespa URLs, such as `https://node1:8080,"
-          + "http://node2:8080` or `https://node3:8080`. HTTPS is used for all connections if any "
-          + "of the URLs starts with `https:`. A URL without a protocol is treated as `http`.";
+          + "https://node2:8080` or `http://node3:8080`. Each URL must start with `http://` or "
+          + "`https://`, and is connected to with that protocol.";
   private static final String ENDPOINT_DISPLAY = "Endpoint URLs";
   private static final String ENDPOINT_DEFAULT = "http://localhost:8080";
 

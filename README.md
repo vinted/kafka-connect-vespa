@@ -107,9 +107,8 @@ Keys must be strings or integers, as with any converter. A record key is an inva
 
 `vespa.endpoint`
 
-The comma-separated list of one or more Vespa URLs, such as `https://node1:8080,http://node2:8080` or
-`https://node3:8080`. HTTPS is used for all connections if any of the URLs starts with `https:`. A URL without a
-protocol is treated as `http`.
+The comma-separated list of one or more Vespa URLs, such as `https://node1:8080,https://node2:8080` or
+`http://node3:8080`. Each URL must start with `http://` or `https://`, and is connected to with that protocol.
 
 * Type: list
 * Default: http://localhost:8080
