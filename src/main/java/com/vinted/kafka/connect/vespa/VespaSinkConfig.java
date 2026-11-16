@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static org.apache.kafka.common.config.ConfigDef.Range.atLeast;
@@ -727,10 +728,26 @@ public class VespaSinkConfig extends AbstractConfig {
     public VespaSinkConfig(Map<String, ?> configProviderProps) {
         super(CONFIG, configProviderProps);
 
-        if (path(SSL_CERTIFICATE_PATH_CONFIG).isPresent() != path(SSL_PRIVATE_KEY_PATH_CONFIG).isPresent()) {
-            throw new ConfigException(String.format("'%s' and '%s' must be set together.",
-                    SSL_CERTIFICATE_PATH_CONFIG, SSL_PRIVATE_KEY_PATH_CONFIG));
+        conflicts(this::get).forEach((name, message) -> {
+            throw new ConfigException(name, get(name), message);
+        });
+    }
+
+    /**
+     * Errors of settings that are valid alone but not together, keyed by the setting to fix.
+     *
+     * @param values the parsed value of a setting, by name
+     */
+    static Map<String, String> conflicts(Function<String, Object> values) {
+        boolean certificate = values.apply(SSL_CERTIFICATE_PATH_CONFIG) != null;
+        boolean privateKey = values.apply(SSL_PRIVATE_KEY_PATH_CONFIG) != null;
+        if (certificate == privateKey) {
+            return Map.of();
         }
+
+        String missing = certificate ? SSL_PRIVATE_KEY_PATH_CONFIG : SSL_CERTIFICATE_PATH_CONFIG;
+        return Map.of(missing, String.format("'%s' and '%s' must be set together.",
+                SSL_CERTIFICATE_PATH_CONFIG, SSL_PRIVATE_KEY_PATH_CONFIG));
     }
 
     /** Builds a feed client for the configured endpoints with every feed client option applied. */

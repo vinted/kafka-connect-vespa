@@ -4,7 +4,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-image=${VESPA_IMAGE:-vespaengine/vespa:8.781.11}
+vespa_version=$(sed -n 's:.*<vespa.version>\(.*\)</vespa.version>.*:\1:p' pom.xml)
+image=${VESPA_IMAGE:-vespaengine/vespa:$vespa_version}
 name=kcv-perf-vespa
 feed_port=${VESPA_FEED_PORT:-28080}
 config_port=${VESPA_CONFIG_PORT:-29071}
