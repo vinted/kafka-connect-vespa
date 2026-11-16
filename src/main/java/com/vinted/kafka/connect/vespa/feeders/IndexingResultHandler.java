@@ -7,8 +7,6 @@ import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Failure;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Kind;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,17 +14,17 @@ import org.slf4j.LoggerFactory;
 /**
  * Decides what an indexing result means for its record. Malformed documents and rejected results
  * ({@code conditionNotMet}) are reported to the errant record reporter, then skipped or failed
- * according to {@code vespa.behavior.on.malformed.documents}. Any other failure fails the record.
+ * according to {@code vespa.behavior.on.malformed.documents}; one the reporter fails to report is a
+ * fatal failure. Any other failure fails the record.
  */
 public class IndexingResultHandler {
   private static final Logger log = LoggerFactory.getLogger(IndexingResultHandler.class);
 
   private final VespaSinkConfig.BehaviorOnMalformedDoc behaviorOnMalformedDoc;
-  private final ErrantRecordReporter reporter;
+  private final RecordReporter reporter;
 
   IndexingResultHandler(
-      VespaSinkConfig.BehaviorOnMalformedDoc behaviorOnMalformedDoc,
-      ErrantRecordReporter reporter) {
+      VespaSinkConfig.BehaviorOnMalformedDoc behaviorOnMalformedDoc, RecordReporter reporter) {
     this.behaviorOnMalformedDoc = behaviorOnMalformedDoc;
     this.reporter = reporter;
   }
@@ -37,9 +35,7 @@ public class IndexingResultHandler {
    * never completes exceptionally.
    */
   CompletableFuture<Optional<Failure>> handle(SinkRecord record, CompletableFuture<Result> future) {
-    return future
-        .handle((result, throwable) -> outcome(record, result, throwable))
-        .exceptionally(throwable -> unhandled(record, throwable));
+    return future.handle((result, throwable) -> outcome(record, result, throwable));
   }
 
   private Optional<Failure> outcome(SinkRecord record, Result result, Throwable throwable) {
@@ -64,16 +60,6 @@ public class IndexingResultHandler {
     return Optional.of(new Failure(failure.kind(), throwable));
   }
 
-  // The errant record reporter throws "Tolerance exceeded" under errors.tolerance=none.
-  private static Optional<Failure> unhandled(SinkRecord record, Throwable throwable) {
-    Throwable cause =
-        throwable instanceof CompletionException && throwable.getCause() != null
-            ? throwable.getCause()
-            : throwable;
-    log.error("Failed to handle the indexing result of {}.", RecordCoordinates.of(record), cause);
-    return Optional.of(new Failure(Kind.FATAL, cause));
-  }
-
   private static void logFailure(SinkRecord record, IndexingFailure failure, Throwable throwable) {
     if (failure == IndexingFailure.TRANSIENT) {
       // The task retries the batch and logs it once.
@@ -85,7 +71,10 @@ public class IndexingResultHandler {
   }
 
   private Optional<Failure> skipOrFail(SinkRecord record, Failure failure) {
-    reporter.report(record, failure.cause);
+    Optional<Failure> unreported = reporter.report(record, failure.cause);
+    if (unreported.isPresent()) {
+      return unreported;
+    }
 
     switch (behaviorOnMalformedDoc) {
       case IGNORE:

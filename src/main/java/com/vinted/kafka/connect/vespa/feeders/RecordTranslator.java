@@ -1,6 +1,7 @@
 package com.vinted.kafka.connect.vespa.feeders;
 
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
+import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Failure;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Kind;
 import java.util.Collection;
 import java.util.List;
@@ -8,7 +9,6 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.DataException;
-import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,20 +16,21 @@ import org.slf4j.LoggerFactory;
 /**
  * An operational mode: which Vespa operations a batch of records becomes. Invalid messages, records
  * whose translation throws a {@link DataException}, are reported to the errant record reporter,
- * then dropped or failed according to {@code vespa.drop.invalid.message}.
+ * then dropped or failed according to {@code vespa.drop.invalid.message}. One the reporter fails to
+ * report is a fatal failure.
  */
 abstract class RecordTranslator<T extends VespaOperation> {
   private static final Logger log = LoggerFactory.getLogger(RecordTranslator.class);
 
   private final boolean dropInvalidMessage;
-  private final ErrantRecordReporter reporter;
+  private final RecordReporter reporter;
 
-  RecordTranslator(boolean dropInvalidMessage, ErrantRecordReporter reporter) {
+  RecordTranslator(boolean dropInvalidMessage, RecordReporter reporter) {
     this.dropInvalidMessage = dropInvalidMessage;
     this.reporter = reporter;
   }
 
-  static RecordTranslator<?> of(VespaSinkConfig config, ErrantRecordReporter reporter) {
+  static RecordTranslator<?> of(VespaSinkConfig config, RecordReporter reporter) {
     switch (config.operationalMode()) {
       case UPSERT:
         return new UpsertTranslator(config, reporter);
@@ -45,7 +46,7 @@ abstract class RecordTranslator<T extends VespaOperation> {
    * Returns the operations to send for the records, in order.
    *
    * @throws VespaFeedException of an invalid message, when a record is an invalid message that is
-   *     not dropped
+   *     not dropped, or a fatal failure, when the errant record reporter fails to report one
    */
   final List<T> operations(Collection<SinkRecord> records) {
     List<T> operations =
@@ -73,7 +74,10 @@ abstract class RecordTranslator<T extends VespaOperation> {
   }
 
   private Optional<T> invalidMessage(SinkRecord record, DataException exception) {
-    reporter.report(record, exception);
+    Optional<Failure> unreported = reporter.report(record, exception);
+    if (unreported.isPresent()) {
+      throw new VespaFeedException(unreported.get().kind, unreported.get().cause);
+    }
 
     // The exception message can echo record content, so only its type is logged and rethrown.
     String failure =

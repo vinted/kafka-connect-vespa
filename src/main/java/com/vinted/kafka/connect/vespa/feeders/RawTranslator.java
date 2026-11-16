@@ -4,7 +4,6 @@ import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentJson;
 import java.util.List;
 import java.util.Optional;
 import org.apache.kafka.connect.errors.DataException;
-import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,7 +16,7 @@ import org.slf4j.LoggerFactory;
 final class RawTranslator extends RecordTranslator<DocumentJson> {
   private static final Logger log = LoggerFactory.getLogger(RawTranslator.class);
 
-  RawTranslator(boolean dropInvalidMessage, ErrantRecordReporter reporter) {
+  RawTranslator(boolean dropInvalidMessage, RecordReporter reporter) {
     super(dropInvalidMessage, reporter);
   }
 
