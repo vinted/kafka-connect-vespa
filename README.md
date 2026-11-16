@@ -1,5 +1,17 @@
 # Kafka Connect Vespa Sink Connector
 
+[![Maven CI](https://github.com/vinted/kafka-connect-vespa/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/vinted/kafka-connect-vespa/actions/workflows/ci.yml?query=branch%3Amaster)
+[![Release](https://github.com/vinted/kafka-connect-vespa/actions/workflows/release.yaml/badge.svg)](https://github.com/vinted/kafka-connect-vespa/actions/workflows/release.yaml)
+[![Latest release](https://img.shields.io/github/v/release/vinted/kafka-connect-vespa?logo=github)](https://github.com/vinted/kafka-connect-vespa/releases/latest)
+[![Release date](https://img.shields.io/github/release-date/vinted/kafka-connect-vespa)](https://github.com/vinted/kafka-connect-vespa/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/vinted/kafka-connect-vespa/total?logo=github)](https://github.com/vinted/kafka-connect-vespa/releases)
+[![License](https://img.shields.io/github/license/vinted/kafka-connect-vespa)](LICENSE)
+
+[![Java](https://img.shields.io/badge/dynamic/xml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fvinted%2Fkafka-connect-vespa%2Fmaster%2Fpom.xml&query=%2F%2F%2A%5Blocal-name%28%29%3D%27maven.compiler.release%27%5D&label=Java&logo=openjdk&color=orange)](pom.xml)
+[![Kafka Connect](https://img.shields.io/badge/dynamic/xml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fvinted%2Fkafka-connect-vespa%2Fmaster%2Fpom.xml&query=%2F%2F%2A%5Blocal-name%28%29%3D%27kafka.version%27%5D&label=Kafka%20Connect&logo=apachekafka&color=231F20)](pom.xml)
+[![Vespa feed client](https://img.shields.io/badge/dynamic/xml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fvinted%2Fkafka-connect-vespa%2Fmaster%2Fpom.xml&query=%2F%2F%2A%5Blocal-name%28%29%3D%27vespa.version%27%5D&label=Vespa%20feed%20client&color=1A7DB6)](pom.xml)
+[![Code style: Google Java](https://img.shields.io/badge/code%20style-Google%20Java-4285F4?logo=google&logoColor=white)](https://google.github.io/styleguide/javaguide.html)
+
 ## Introduction
 
 The Vespa Sink Connector is used to write data from Kafka to a Vespa search engine.
