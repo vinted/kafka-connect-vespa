@@ -84,8 +84,8 @@ public class VespaFeedException extends ConnectException {
         .collect(Collectors.joining("; "));
   }
 
-  // Messages carry document ids and paths, so failures are told apart by kind, type and HTTP status
-  // only.
+  // Messages carry document ids and paths, so failures are told apart by kind, type and
+  // HTTP status only.
   private static String reason(Failure failure) {
     return failure.kind
         + " "

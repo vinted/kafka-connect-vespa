@@ -171,8 +171,8 @@ class IndexingFailureContractTest {
   void classifiesOperationsAbortedByOpenCircuitBreakerAsTransient() throws Exception {
     Request.Handler failing = vespaError(500, "Internal server error");
     Request.Handler hanging = neverAnswer();
-    // The first operation starts the breaker's failure period; the second is in flight when it
-    // opens.
+    // The first operation starts the breaker's failure period;
+    // the second is in flight when it opens.
     server =
         MockVespaServer.http(
             (request, response, callback) ->

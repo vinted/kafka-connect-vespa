@@ -55,8 +55,8 @@ public enum IndexingFailure {
         : FATAL;
   }
 
-  // The client switches on the Content-Type of a non-OK handshake response, so a missing one throws
-  // this.
+  // The client switches on the Content-Type of a non-OK handshake response, so a missing one
+  // throws this.
   private static boolean isUntypedHandshakeRejection(Throwable failure) {
     return failure instanceof NullPointerException
         && Arrays.stream(failure.getStackTrace())
@@ -84,22 +84,22 @@ public enum IndexingFailure {
   }
 
   private static boolean isTransient(FeedException failure) {
-    // Document JSON the client could not parse; its cause is a Jackson exception, which is an
-    // IOException.
+    // Document JSON the client could not parse; its cause is a Jackson exception, which is
+    // an IOException.
     if (failure instanceof OperationParseException) {
       return false;
     }
 
-    // 502, 504 and 507, and responses that are not Vespa JSON, such as a load balancer's error
-    // page.
+    // 502, 504 and 507, and responses that are not Vespa JSON, such as a load balancer's
+    // error page.
     if (failure instanceof ResultException || failure instanceof ResultParseException) {
       return true;
     }
 
     String message = String.valueOf(failure.getMessage());
 
-    // The client's circuit breaker opened, or the server rejected the handshake without a status
-    // code.
+    // The client's circuit breaker opened, or the server rejected the handshake without a
+    // status code.
     return message.contains("Operation aborted")
         || message.contains("non-OK to handshake")
         || status(failure).filter(status -> status >= 500).isPresent()
