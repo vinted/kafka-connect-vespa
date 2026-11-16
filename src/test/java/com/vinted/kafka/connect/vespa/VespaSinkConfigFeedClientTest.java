@@ -13,13 +13,8 @@ import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
-import org.eclipse.jetty.http.HttpHeader;
-import org.eclipse.jetty.io.Content;
 import org.eclipse.jetty.io.EndPoint;
-import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.Request;
-import org.eclipse.jetty.server.Response;
-import org.eclipse.jetty.util.Callback;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -250,18 +245,13 @@ public class VespaSinkConfigFeedClientTest {
         tls.setTrustStore(trustStore);
         tls.setNeedClientAuth(true);
 
-        httpsServer = MockVespaServer.https(tls, new Handler.Abstract() {
-            @Override
-            public boolean handle(Request request, Response response, Callback callback) {
-                EndPoint.SslSessionData session =
-                        (EndPoint.SslSessionData) request.getAttribute(EndPoint.SslSessionData.ATTRIBUTE);
-                presentedClientCertificates.addAll(Arrays.asList(session.peerCertificates()));
-                response.setStatus(200);
-                response.getHeaders().put(HttpHeader.CONTENT_TYPE, "application/json");
-                Content.Sink.write(response, true, "{}", callback);
-                return true;
-            }
-        });
+        Request.Handler acknowledge = MockVespaServer.acknowledge();
+        httpsServer = MockVespaServer.https(tls, (request, response, callback) -> {
+            EndPoint.SslSessionData session =
+                    (EndPoint.SslSessionData) request.getAttribute(EndPoint.SslSessionData.ATTRIBUTE);
+            presentedClientCertificates.addAll(Arrays.asList(session.peerCertificates()));
+            return acknowledge.handle(request, response, callback);
+        }, acknowledge);
     }
 
     private Path writePem(String fileName, Object object) throws IOException {
