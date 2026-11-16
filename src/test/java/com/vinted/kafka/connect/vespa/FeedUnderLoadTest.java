@@ -2,6 +2,7 @@ package com.vinted.kafka.connect.vespa;
 
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.sink.SinkRecord;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -22,18 +23,26 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  */
 @Tag("performance")
 class FeedUnderLoadTest {
-    private static final String ENDPOINT = System.getProperty("vespa.perf.endpoint");
     private static final int RECORDS = Integer.getInteger("vespa.perf.records", 200_000);
     private static final int BATCH = Integer.getInteger("vespa.perf.batch", 500);
     private static final String OUTAGE_COMMAND = System.getProperty("vespa.perf.outage.command");
 
+    private PerformanceTarget target;
     private VespaAdmin vespa;
 
     @BeforeEach
     void before() throws Exception {
-        assumeTrue(ENDPOINT != null && ENDPOINT.startsWith("http"), "set vespa.perf.endpoint to a running Vespa");
-        vespa = new VespaAdmin(ENDPOINT);
-        vespa.deleteAll();
+        target = PerformanceTarget.fromSystemProperties();
+        assumeTrue(target != null && target.indexes(), "set vespa.perf.endpoint to a running Vespa");
+        vespa = target.vespa();
+        target.clear();
+    }
+
+    @AfterEach
+    void after() throws Exception {
+        if (target != null) {
+            target.close();
+        }
     }
 
     @Test
@@ -119,8 +128,8 @@ class FeedUnderLoadTest {
         return worker;
     }
 
-    private static ConnectWorker start(Map<String, String> overrides) {
-        return new ConnectWorker(new VespaSinkTask()).start(PerformanceRecords.connectorProps(ENDPOINT, overrides));
+    private ConnectWorker start(Map<String, String> overrides) {
+        return target.start(overrides);
     }
 
     private static void restartVespa() {
@@ -133,10 +142,10 @@ class FeedUnderLoadTest {
     }
 
     private static String put(int document) {
-        return "{\"put\":\"id:perf:item::" + document + "\",\"fields\":{\"title\":\"item " + document + "\",\"views\":0}}";
+        return "{\"put\":\"" + PerformanceRecords.documentId("" + document) + "\",\"fields\":{\"title\":\"item " + document + "\",\"views\":0}}";
     }
 
     private static String increment(int document) {
-        return "{\"update\":\"id:perf:item::" + document + "\",\"fields\":{\"views\":{\"increment\":1}}}";
+        return "{\"update\":\"" + PerformanceRecords.documentId("" + document) + "\",\"fields\":{\"views\":{\"increment\":1}}}";
     }
 }
