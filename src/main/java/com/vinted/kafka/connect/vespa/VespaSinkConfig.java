@@ -116,10 +116,10 @@ public class VespaSinkConfig extends AbstractConfig {
 
   public static final String OPERATIONAL_MODE_CONFIG = "vespa.operational.mode";
   private static final String OPERATIONAL_MODE_DOC =
-      "The operational mode of the connector. Valid options are upsert and raw. Upsert mode puts "
-          + "each record as a whole document, replacing any existing one, and turns tombstones "
-          + "into removes. Raw mode executes all operations using document json format as "
-          + "explained in https://docs.vespa.ai/en/reference/document-json-format.html.";
+      "The operational mode of the connector. Valid options are UPSERT and RAW, in any case. "
+          + "UPSERT mode puts each record as a whole document, replacing any existing one, and "
+          + "turns tombstones into removes. RAW mode executes all operations using document json "
+          + "format as explained in https://docs.vespa.ai/en/reference/document-json-format.html.";
   private static final String OPERATIONAL_MODE_DISPLAY = "Operational mode";
   private static final OperationalMode OPERATIONAL_MODE_DEFAULT = OperationalMode.UPSERT;
 
@@ -308,7 +308,7 @@ public class VespaSinkConfig extends AbstractConfig {
   private static final String BEHAVIOR_ON_MALFORMED_DOCS_DOC =
       "How to handle malformed documents (an HTTP 400, or document JSON the feed client cannot "
           + "parse) and operations whose test-and-set condition is not met. Valid options are "
-          + "`IGNORE`, `WARN`, and `FAIL`.";
+          + "`IGNORE`, `WARN`, and `FAIL`, in any case.";
   private static final String BEHAVIOR_ON_MALFORMED_DOCS_DISPLAY =
       "Behavior on malformed documents";
   private static final BehaviorOnMalformedDoc BEHAVIOR_ON_MALFORMED_DOCS_DEFAULT =
@@ -477,7 +477,7 @@ public class VespaSinkConfig extends AbstractConfig {
             OPERATIONAL_MODE_CONFIG,
             ConfigDef.Type.STRING,
             OPERATIONAL_MODE_DEFAULT.name(),
-            Validators.validEnum(OperationalMode.class),
+            anyCaseOf(OperationalMode.class),
             ConfigDef.Importance.HIGH,
             OPERATIONAL_MODE_DOC,
             CONNECTOR_GROUP,
@@ -772,7 +772,7 @@ public class VespaSinkConfig extends AbstractConfig {
             BEHAVIOR_ON_MALFORMED_DOCS_CONFIG,
             ConfigDef.Type.STRING,
             BEHAVIOR_ON_MALFORMED_DOCS_DEFAULT.name(),
-            Validators.validEnum(BehaviorOnMalformedDoc.class),
+            anyCaseOf(BehaviorOnMalformedDoc.class),
             ConfigDef.Importance.LOW,
             BEHAVIOR_ON_MALFORMED_DOCS_DOC,
             DATA_CONVERSION_GROUP,
@@ -869,7 +869,7 @@ public class VespaSinkConfig extends AbstractConfig {
   }
 
   public OperationalMode operationalMode() {
-    return ConfigUtils.getEnum(OperationalMode.class, this, OPERATIONAL_MODE_CONFIG);
+    return getEnum(OperationalMode.class, OPERATIONAL_MODE_CONFIG);
   }
 
   /** The configured namespace, or the topic when none is. */
@@ -932,8 +932,16 @@ public class VespaSinkConfig extends AbstractConfig {
   }
 
   public BehaviorOnMalformedDoc behaviorOnMalformedDoc() {
-    return ConfigUtils.getEnum(
-        BehaviorOnMalformedDoc.class, this, BEHAVIOR_ON_MALFORMED_DOCS_CONFIG);
+    return getEnum(BehaviorOnMalformedDoc.class, BEHAVIOR_ON_MALFORMED_DOCS_CONFIG);
+  }
+
+  private <E extends Enum<E>> E getEnum(Class<E> type, String name) {
+    return Enum.valueOf(type, getString(name).toUpperCase(Locale.ROOT));
+  }
+
+  private static ConfigDef.Validator anyCaseOf(Class<? extends Enum<?>> type) {
+    return ConfigDef.CaseInsensitiveValidString.in(
+        Arrays.stream(type.getEnumConstants()).map(Enum::name).toArray(String[]::new));
   }
 
   private List<URI> endpoints() {
