@@ -7,12 +7,7 @@ import ai.vespa.feed.client.Result;
 import ai.vespa.feed.client.impl.GracePeriodCircuitBreaker;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.mocks.MockVespaServer;
-import org.eclipse.jetty.http.HttpHeader;
-import org.eclipse.jetty.io.Content;
-import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.Request;
-import org.eclipse.jetty.server.Response;
-import org.eclipse.jetty.util.Callback;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -33,6 +28,10 @@ import java.util.stream.Stream;
 import static com.vinted.kafka.connect.vespa.feeders.IndexingFailure.FATAL;
 import static com.vinted.kafka.connect.vespa.feeders.IndexingFailure.MALFORMED_DOCUMENT;
 import static com.vinted.kafka.connect.vespa.feeders.IndexingFailure.TRANSIENT;
+import static com.vinted.kafka.connect.vespa.mocks.MockVespaServer.acknowledge;
+import static com.vinted.kafka.connect.vespa.mocks.MockVespaServer.neverAnswer;
+import static com.vinted.kafka.connect.vespa.mocks.MockVespaServer.respond;
+import static com.vinted.kafka.connect.vespa.mocks.MockVespaServer.vespaError;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -41,13 +40,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class IndexingFailureContractTest {
     private static final DocumentId ID = DocumentId.of("id:ns:dt::1");
     private static final String DOCUMENT = "{\"fields\":{\"title\":\"a\"}}";
-    private static final String HANDSHAKE_PATH = "/document/v1/feeder/handshake/docid/dummy";
-    private static final String JSON = "application/json";
     private static final String HTML = "text/html";
     private static final String BAD_GATEWAY_PAGE =
             "<html><head><title>502 Bad Gateway</title></head><body><center><h1>502 Bad Gateway</h1></center></body></html>";
-    private static final Request.Handler HANDSHAKE_OK = respond(200, JSON, "{}");
-    private static final Request.Handler NEVER_RESPOND = (request, response, callback) -> true;
 
     // The client retries 503s and network failures itself; fail them on the first attempt instead.
     private final Map<String, String> params = new HashMap<>(Map.of(
@@ -58,36 +53,36 @@ class IndexingFailureContractTest {
 
     static Stream<Arguments> failedOperations() {
         return Stream.of(
-                Arguments.of(400, JSON, vespaError("Error in document 'id:ns:dt::1' - could not parse field 'title'"), MALFORMED_DOCUMENT),
-                Arguments.of(401, JSON, vespaError("Unauthorized"), FATAL),
-                Arguments.of(403, JSON, vespaError("Forbidden"), FATAL),
-                Arguments.of(404, JSON, vespaError("Nothing at '/document/v1/ns/dt/docid/1'"), FATAL),
-                Arguments.of(500, JSON, vespaError("Internal server error"), TRANSIENT),
-                Arguments.of(502, JSON, vespaError("Could not send message to distributor"), TRANSIENT),
-                Arguments.of(503, JSON, vespaError("Rejecting execution due to overload"), TRANSIENT),
-                Arguments.of(504, JSON, vespaError("Timed out"), TRANSIENT),
-                Arguments.of(507, JSON, vespaError("Disk full"), TRANSIENT),
-                Arguments.of(502, HTML, BAD_GATEWAY_PAGE, TRANSIENT),
-                Arguments.of(503, HTML, "<html><body>Service Unavailable</body></html>", TRANSIENT),
+                Arguments.of("400 Vespa error", vespaError(400, "Error in document 'id:ns:dt::1' - could not parse field 'title'"), MALFORMED_DOCUMENT),
+                Arguments.of("401 Vespa error", vespaError(401, "Unauthorized"), FATAL),
+                Arguments.of("403 Vespa error", vespaError(403, "Forbidden"), FATAL),
+                Arguments.of("404 Vespa error", vespaError(404, "Nothing at '/document/v1/ns/dt/docid/1'"), FATAL),
+                Arguments.of("500 Vespa error", vespaError(500, "Internal server error"), TRANSIENT),
+                Arguments.of("502 Vespa error", vespaError(502, "Could not send message to distributor"), TRANSIENT),
+                Arguments.of("503 Vespa error", vespaError(503, "Rejecting execution due to overload"), TRANSIENT),
+                Arguments.of("504 Vespa error", vespaError(504, "Timed out"), TRANSIENT),
+                Arguments.of("507 Vespa error", vespaError(507, "Disk full"), TRANSIENT),
+                Arguments.of("502 HTML", respond(502, HTML, BAD_GATEWAY_PAGE), TRANSIENT),
+                Arguments.of("503 HTML", respond(503, HTML, "<html><body>Service Unavailable</body></html>"), TRANSIENT),
                 // A body that is not Vespa JSON loses its status, so even a 4xx is retried.
-                Arguments.of(404, HTML, "<html><body>Not Found</body></html>", TRANSIENT),
-                Arguments.of(401, null, "", TRANSIENT));
+                Arguments.of("404 HTML", respond(404, HTML, "<html><body>Not Found</body></html>"), TRANSIENT),
+                Arguments.of("401 empty", respond(401, null, ""), TRANSIENT));
     }
 
     static Stream<Arguments> rejectedHandshakes() {
         return Stream.of(
-                Arguments.of(401, JSON, vespaError("Unauthorized")),
-                Arguments.of(403, JSON, vespaError("Forbidden")),
-                Arguments.of(503, JSON, vespaError("Service unavailable")),
-                Arguments.of(502, HTML, BAD_GATEWAY_PAGE),
-                Arguments.of(503, "text/plain", "no healthy upstream"),
-                Arguments.of(503, null, ""));
+                Arguments.of("401 Vespa error", vespaError(401, "Unauthorized")),
+                Arguments.of("403 Vespa error", vespaError(403, "Forbidden")),
+                Arguments.of("503 Vespa error", vespaError(503, "Service unavailable")),
+                Arguments.of("502 HTML", respond(502, HTML, BAD_GATEWAY_PAGE)),
+                Arguments.of("503 plain text", respond(503, "text/plain", "no healthy upstream")),
+                Arguments.of("503 empty", respond(503, null, "")));
     }
 
     @ParameterizedTest
     @ValueSource(ints = {400, 401, 403, 404, 500, 503})
     void readsTheStatusOfVespaErrorsAndDescribesThemWithoutTheDocumentId(int status) throws Exception {
-        server = MockVespaServer.http(afterHandshake(respond(status, JSON, vespaError("Failed"))));
+        server = MockVespaServer.http(vespaError(status, "Failed"));
         params.put(VespaSinkConfig.ENDPOINT_CONFIG, server.url());
 
         try (FeedClient client = config().feedClient()) {
@@ -99,18 +94,18 @@ class IndexingFailureContractTest {
         }
     }
 
-    @ParameterizedTest(name = "{0} {1} -> {3}")
+    @ParameterizedTest(name = "{0} -> {2}")
     @MethodSource("failedOperations")
-    void classifiesFailedOperations(int status, String contentType, String body, IndexingFailure expected) throws Exception {
-        server = MockVespaServer.http(afterHandshake(respond(status, contentType, body)));
+    void classifiesFailedOperations(String name, Request.Handler answer, IndexingFailure expected) throws Exception {
+        server = MockVespaServer.http(answer);
 
         assertPutFails(expected);
     }
 
-    @ParameterizedTest(name = "{0} {1}")
+    @ParameterizedTest(name = "{0}")
     @MethodSource("rejectedHandshakes")
-    void classifiesRejectedHandshakeAsTransient(int status, String contentType, String body) throws Exception {
-        server = MockVespaServer.http(handler(respond(status, contentType, body)));
+    void classifiesRejectedHandshakeAsTransient(String name, Request.Handler handshake) throws Exception {
+        server = MockVespaServer.http(handshake, neverAnswer());
         params.put(VespaSinkConfig.ENDPOINT_CONFIG, server.url());
 
         assertKind(TRANSIENT, assertThrows(RuntimeException.class, () -> config().feedClient()));
@@ -125,7 +120,7 @@ class IndexingFailureContractTest {
 
     @Test
     void classifiesConnectionRefusedAfterServerStopsAsTransient() throws Exception {
-        server = MockVespaServer.http(afterHandshake(HANDSHAKE_OK));
+        server = MockVespaServer.http(acknowledge());
         params.put(VespaSinkConfig.ENDPOINT_CONFIG, server.url());
 
         try (FeedClient client = config().feedClient()) {
@@ -138,7 +133,7 @@ class IndexingFailureContractTest {
     @Test
     void classifiesOperationTimeoutAsTransient() throws Exception {
         params.put(VespaSinkConfig.OPERATION_TIMEOUT_MS_CONFIG, "200");
-        server = MockVespaServer.http(afterHandshake(NEVER_RESPOND));
+        server = MockVespaServer.http(neverAnswer());
 
         assertPutFails(TRANSIENT);
     }
@@ -146,17 +141,18 @@ class IndexingFailureContractTest {
     @Test
     void classifiesThrottlingUntilTimeoutAsTransient() throws Exception {
         params.put(VespaSinkConfig.OPERATION_TIMEOUT_MS_CONFIG, "200");
-        server = MockVespaServer.http(afterHandshake(respond(429, JSON, vespaError("Rejecting execution due to overload"))));
+        server = MockVespaServer.http(vespaError(429, "Rejecting execution due to overload"));
 
         assertPutFails(TRANSIENT);
     }
 
     @Test
     void classifiesOperationsAbortedByOpenCircuitBreakerAsTransient() throws Exception {
-        Request.Handler failing = respond(500, JSON, vespaError("Internal server error"));
+        Request.Handler failing = vespaError(500, "Internal server error");
+        Request.Handler hanging = neverAnswer();
         // The first operation starts the breaker's failure period; the second is in flight when it opens.
-        server = MockVespaServer.http(afterHandshake((request, response, callback) ->
-                (request.getHttpURI().getPath().endsWith("/1") ? failing : NEVER_RESPOND).handle(request, response, callback)));
+        server = MockVespaServer.http((request, response, callback) ->
+                (request.getHttpURI().getPath().endsWith("/1") ? failing : hanging).handle(request, response, callback));
         params.put(VespaSinkConfig.ENDPOINT_CONFIG, server.url());
 
         // vespa.max.failure.ms is at least 10s, too slow for a test.
@@ -174,7 +170,7 @@ class IndexingFailureContractTest {
 
     @Test
     void returnsConditionNotMetAsResultRatherThanFailure() throws Exception {
-        server = MockVespaServer.http(afterHandshake(respond(412, JSON, vespaError("Condition did not match document"))));
+        server = MockVespaServer.http(vespaError(412, "Condition did not match document"));
         params.put(VespaSinkConfig.ENDPOINT_CONFIG, server.url());
 
         try (FeedClient client = config().feedClient()) {
@@ -217,36 +213,5 @@ class IndexingFailureContractTest {
         try (ServerSocket socket = new ServerSocket(0)) {
             return socket.getLocalPort();
         }
-    }
-
-    private static String vespaError(String message) {
-        return "{\"pathId\":\"/document/v1/ns/dt/docid/1\",\"id\":\"id:ns:dt::1\",\"message\":\"" + message + "\"}";
-    }
-
-    private static Request.Handler respond(int status, String contentType, String body) {
-        return (request, response, callback) -> {
-            response.setStatus(status);
-            if (contentType != null) {
-                response.getHeaders().put(HttpHeader.CONTENT_TYPE, contentType);
-            }
-            Content.Sink.write(response, true, body, callback);
-            return true;
-        };
-    }
-
-    private static Handler afterHandshake(Request.Handler operations) {
-        return handler((request, response, callback) -> {
-            boolean handshake = request.getHttpURI().getPath().equals(HANDSHAKE_PATH);
-            return (handshake ? HANDSHAKE_OK : operations).handle(request, response, callback);
-        });
-    }
-
-    private static Handler handler(Request.Handler handler) {
-        return new Handler.Abstract() {
-            @Override
-            public boolean handle(Request request, Response response, Callback callback) throws Exception {
-                return handler.handle(request, response, callback);
-            }
-        };
     }
 }

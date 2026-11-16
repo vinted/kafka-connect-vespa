@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.lang.management.ManagementFactory;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -52,7 +53,8 @@ class FeedPerformanceTest {
         }
 
         if ("mock".equals(ENDPOINT)) {
-            mock = MockVespaServer.http(new AcknowledgingHandler(Long.getLong("vespa.perf.mock.latency.micros", 0)));
+            Duration latency = Duration.ofNanos(Long.getLong("vespa.perf.mock.latency.micros", 0) * 1000);
+            mock = MockVespaServer.http(MockVespaServer.acknowledgeAfter(latency));
             endpoint = mock.url();
             return;
         }
