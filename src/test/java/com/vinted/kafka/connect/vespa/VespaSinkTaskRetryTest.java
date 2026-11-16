@@ -175,6 +175,70 @@ class VespaSinkTaskRetryTest {
         assertEquals(List.of(invalid), worker.reported());
     }
 
+    @Test
+    void growsTheBackoffWithEachRetry() {
+        params.put(VespaSinkConfig.MAX_RETRIES_CONFIG, "2");
+        client.answerAll(failure(UNAVAILABLE));
+        worker.start(params);
+
+        assertThrows(RetriableException.class, () -> worker.put(batch()));
+        assertThrows(RetriableException.class, () -> worker.put(batch()));
+
+        List<Long> backoffs = worker.backoffs();
+        assertEquals(2, backoffs.size());
+        assertTrue(backoffs.get(0) >= 0 && backoffs.get(0) < 2000, "first backoff " + backoffs.get(0));
+        assertTrue(backoffs.get(1) >= 0 && backoffs.get(1) < 4000, "second backoff " + backoffs.get(1));
+    }
+
+    @Test
+    void startsTheRetryBudgetAgainOnceItIsExhausted() {
+        client.answerAll(failure(UNAVAILABLE));
+        worker.start(params);
+        assertThrows(RetriableException.class, () -> worker.put(batch()));
+        assertNotRetriable(() -> worker.put(batch()));
+
+        assertThrows(RetriableException.class, () -> worker.put(batch()));
+        assertEquals(2, worker.redeliveries());
+    }
+
+    @Test
+    void failsTheTaskAtOnceWhenRetriesAreDisabled() {
+        params.put(VespaSinkConfig.MAX_RETRIES_CONFIG, "0");
+        client.answerAll(failure(UNAVAILABLE));
+        worker.start(params);
+
+        assertNotRetriable(() -> worker.put(batch()));
+        assertEquals(0, worker.redeliveries());
+    }
+
+    @Test
+    void reportsARecordAgainWhenItComesBackAfterItsBatchSucceeded() {
+        params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
+        SinkRecord malformed = record("malformed");
+        client.answer("id:ns:dt::malformed", failure(BAD_REQUEST));
+        worker.start(params);
+
+        worker.put(List.of(malformed));
+        worker.put(List.of(malformed));
+
+        assertEquals(List.of(malformed, malformed), worker.reported());
+    }
+
+    @Test
+    void reportsARecordAgainWhenItComesBackAfterTheRetryBudgetGaveUp() {
+        params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
+        SinkRecord malformed = record("malformed");
+        List<SinkRecord> batch = List.of(malformed, record("unauthorized"));
+        client.answer("id:ns:dt::malformed", failure(BAD_REQUEST))
+                .answer("id:ns:dt::unauthorized", failure(UNAUTHORIZED));
+        worker.start(params);
+
+        assertNotRetriable(() -> worker.put(batch));
+        assertNotRetriable(() -> worker.put(batch));
+
+        assertEquals(List.of(malformed, malformed), worker.reported());
+    }
+
     private static void assertNotRetriable(org.junit.jupiter.api.function.Executable put) {
         ConnectException thrown = assertThrows(ConnectException.class, put);
         assertTrue(!(thrown instanceof RetriableException), "expected a non-retriable failure");

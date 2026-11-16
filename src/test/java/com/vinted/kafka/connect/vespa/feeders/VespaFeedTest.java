@@ -35,7 +35,7 @@ class VespaFeedTest {
         VespaFeed feed = VespaFeed.open(config, NO_REPORTER, () -> client, backoffMs -> { });
 
         VespaFeedException thrown = assertThrows(VespaFeedException.class,
-                () -> feed.feed(List.of(record("key-1"), record("key-2"))));
+                () -> feed.deliver(List.of(record("key-1"), record("key-2"))));
 
         assertSame(closed, thrown.getCause());
         assertEquals("fatal failure in 2 operations: IllegalStateException: Client is closed", thrown.getMessage());
@@ -48,7 +48,7 @@ class VespaFeedTest {
         VespaFeed feed = VespaFeed.open(config, NO_REPORTER, () -> refusing, backoffMs -> { });
 
         VespaFeedException thrown = assertThrows(VespaFeedException.class,
-                () -> feed.feed(List.of(record("key-1"), record("key-2"))));
+                () -> feed.deliver(List.of(record("key-1"), record("key-2"))));
 
         assertEquals("fatal failure in 2 operations: IllegalStateException: Client is closed", thrown.getMessage());
     }

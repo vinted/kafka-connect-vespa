@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -27,27 +26,6 @@ class RecordTranslatorTest {
 
     private final ErrantRecordReporter reporter = mock(ErrantRecordReporter.class);
     private long offset = 7;
-
-    @Test
-    void reportsAndDropsInvalidMessagesWhenConfigured() {
-        SinkRecord before = record("valid");
-        SinkRecord invalid = record("invalid");
-        SinkRecord after = record("valid");
-
-        List<DocumentJson> operations = translator(true).operations(List.of(before, invalid, after));
-
-        assertEquals(List.of(before, after), operations.stream().map(operation -> operation.record).collect(Collectors.toList()));
-        verify(reporter).report(invalid, INVALID);
-    }
-
-    @Test
-    void reportsAndFailsOnInvalidMessagesByDefault() {
-        SinkRecord invalid = record("invalid");
-
-        assertThrows(VespaFeedException.class, () -> translator(false).operations(List.of(invalid)));
-
-        verify(reporter).report(invalid, INVALID);
-    }
 
     @Test
     void keepsRecordContentOutOfTheFailure() {
