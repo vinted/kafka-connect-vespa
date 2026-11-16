@@ -39,8 +39,8 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Package with maven
-        run: mvn package
+      - name: Package and test the package with maven
+        run: mvn verify
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
