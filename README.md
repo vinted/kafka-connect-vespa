@@ -641,3 +641,13 @@ Update an existing instance.
 ```bash
 curl -s -X PUT -H 'Content-Type: application/json' --data @connector.json http://localhost:8083/connectors/TestSinkConnector1/config
 ```
+
+### Development
+
+The code follows [Google Java Style](https://google.github.io/styleguide/javaguide.html). The build fails when it
+does not: Spotless checks the formatting with google-java-format and Checkstyle checks the rest with `google_checks.xml`,
+on main and test sources, with no suppressions. Format the code before committing:
+
+```bash
+mvn spotless:apply
+```

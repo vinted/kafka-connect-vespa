@@ -3,6 +3,11 @@ package com.vinted.kafka.connect.vespa;
 import ai.vespa.feed.client.FeedClient;
 import com.github.jcustenborder.kafka.connect.utils.VersionUtil;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeed;
+import java.io.IOException;
+import java.util.Collection;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
@@ -10,84 +15,84 @@ import org.apache.kafka.connect.sink.SinkTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.util.Collection;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.Function;
-
+/**
+ * Feeds the batches Kafka Connect hands it to Vespa through a {@link
+ * com.vinted.kafka.connect.vespa.feeders.VespaFeed}, which asks Connect to redeliver a batch that
+ * failed only transiently.
+ */
 public class VespaSinkTask extends SinkTask {
-    private static final Logger log = LoggerFactory.getLogger(VespaSinkTask.class);
-    private static final ErrantRecordReporter NO_REPORTER = (record, error) -> CompletableFuture.completedFuture(null);
+  private static final Logger log = LoggerFactory.getLogger(VespaSinkTask.class);
+  private static final ErrantRecordReporter NO_REPORTER =
+      (record, error) -> CompletableFuture.completedFuture(null);
 
-    private final Function<VespaSinkConfig, FeedClient> clients;
-    private VespaFeed feed;
+  private final Function<VespaSinkConfig, FeedClient> clients;
+  private VespaFeed feed;
 
-    public VespaSinkTask() {
-        this(VespaSinkConfig::feedClient);
+  public VespaSinkTask() {
+    this(VespaSinkConfig::feedClient);
+  }
+
+  VespaSinkTask(Function<VespaSinkConfig, FeedClient> clients) {
+    this.clients = clients;
+  }
+
+  @Override
+  public void start(Map<String, String> props) {
+    log.info("Starting Vespa Sink Task.");
+
+    ErrantRecordReporter reporter = errantRecordReporter();
+    VespaSinkConfig config = new VespaSinkConfig(props);
+    log.info("Using {} operational mode.", config.operationalMode());
+
+    this.feed = VespaFeed.open(config, reporter, () -> clients.apply(config), context::timeout);
+  }
+
+  private ErrantRecordReporter errantRecordReporter() {
+    try {
+      // Null unless errors.deadletterqueue.topic.name or errors.log.enable is set.
+      ErrantRecordReporter reporter = context.errantRecordReporter();
+      if (reporter == null) {
+        log.info("Errant record reporter not configured.");
+        return NO_REPORTER;
+      }
+      return reporter;
+    } catch (NoClassDefFoundError | NoSuchMethodError e) {
+      // Will occur in Connect runtimes earlier than 2.6
+      log.warn("Kafka versions prior to 2.6 do not support the errant record reporter.");
+      return NO_REPORTER;
+    }
+  }
+
+  @Override
+  public void put(Collection<SinkRecord> collection) {
+    if (collection.isEmpty()) {
+      return;
     }
 
-    VespaSinkTask(Function<VespaSinkConfig, FeedClient> clients) {
-        this.clients = clients;
+    log.debug("Putting {} records.", collection.size());
+    feed.deliver(collection);
+  }
+
+  @Override
+  public void stop() {
+    log.info("Stopping Vespa Sink Task.");
+
+    if (feed == null) {
+      return;
     }
 
-    @Override
-    public void start(Map<String, String> props) {
-        log.info("Starting Vespa Sink Task.");
-
-        ErrantRecordReporter reporter = errantRecordReporter();
-        VespaSinkConfig config = new VespaSinkConfig(props);
-        log.info("Using {} operational mode.", config.operationalMode());
-
-        this.feed = VespaFeed.open(config, reporter, () -> clients.apply(config), context::timeout);
+    try {
+      feed.close();
+    } catch (IOException e) {
+      log.error("Error closing Vespa feeder.", e);
+      throw new ConnectException(e);
+    } finally {
+      feed = null;
     }
+  }
 
-    private ErrantRecordReporter errantRecordReporter() {
-        try {
-            // Null unless errors.deadletterqueue.topic.name or errors.log.enable is set.
-            ErrantRecordReporter reporter = context.errantRecordReporter();
-            if (reporter == null) {
-                log.info("Errant record reporter not configured.");
-                return NO_REPORTER;
-            }
-            return reporter;
-        } catch (NoClassDefFoundError | NoSuchMethodError e) {
-            // Will occur in Connect runtimes earlier than 2.6
-            log.warn("Kafka versions prior to 2.6 do not support the errant record reporter.");
-            return NO_REPORTER;
-        }
-    }
-
-    @Override
-    public void put(Collection<SinkRecord> collection) {
-        if (collection.isEmpty()) {
-            return;
-        }
-
-        log.debug("Putting {} records.", collection.size());
-        feed.deliver(collection);
-    }
-
-    @Override
-    public void stop() {
-        log.info("Stopping Vespa Sink Task.");
-
-        if (feed == null) {
-            return;
-        }
-
-        try {
-            feed.close();
-        } catch (IOException e) {
-            log.error("Error closing Vespa feeder.", e);
-            throw new ConnectException(e);
-        } finally {
-            feed = null;
-        }
-    }
-
-    @Override
-    public String version() {
-        return VersionUtil.version(this.getClass());
-    }
+  @Override
+  public String version() {
+    return VersionUtil.version(this.getClass());
+  }
 }

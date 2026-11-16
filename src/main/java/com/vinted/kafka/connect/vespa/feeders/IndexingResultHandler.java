@@ -5,104 +5,113 @@ import ai.vespa.feed.client.Result;
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Failure;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeedException.Kind;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-
 /**
  * Decides what an indexing result means for its record. Malformed documents and rejected results
- * ({@code conditionNotMet}) are reported to the errant record reporter, then skipped or failed according to
- * {@code vespa.behavior.on.malformed.documents}. Any other failure fails the record.
+ * ({@code conditionNotMet}) are reported to the errant record reporter, then skipped or failed
+ * according to {@code vespa.behavior.on.malformed.documents}. Any other failure fails the record.
  */
 public class IndexingResultHandler {
-    private static final Logger log = LoggerFactory.getLogger(IndexingResultHandler.class);
+  private static final Logger log = LoggerFactory.getLogger(IndexingResultHandler.class);
 
-    private final VespaSinkConfig.BehaviorOnMalformedDoc behaviorOnMalformedDoc;
-    private final ErrantRecordReporter reporter;
+  private final VespaSinkConfig.BehaviorOnMalformedDoc behaviorOnMalformedDoc;
+  private final ErrantRecordReporter reporter;
 
-    IndexingResultHandler(VespaSinkConfig.BehaviorOnMalformedDoc behaviorOnMalformedDoc, ErrantRecordReporter reporter) {
-        this.behaviorOnMalformedDoc = behaviorOnMalformedDoc;
-        this.reporter = reporter;
+  IndexingResultHandler(
+      VespaSinkConfig.BehaviorOnMalformedDoc behaviorOnMalformedDoc,
+      ErrantRecordReporter reporter) {
+    this.behaviorOnMalformedDoc = behaviorOnMalformedDoc;
+    this.reporter = reporter;
+  }
+
+  /**
+   * Returns a future that completes once {@code future} completes and the record has been reported
+   * where needed, with why the record fails its batch, or empty when it succeeded or is skipped. It
+   * never completes exceptionally.
+   */
+  CompletableFuture<Optional<Failure>> handle(SinkRecord record, CompletableFuture<Result> future) {
+    return future
+        .handle((result, throwable) -> outcome(record, result, throwable))
+        .exceptionally(throwable -> unhandled(record, throwable));
+  }
+
+  private Optional<Failure> outcome(SinkRecord record, Result result, Throwable throwable) {
+    if (result != null && result.type() == Result.Type.success) {
+      return Optional.empty();
     }
 
-    /**
-     * Returns a future that completes once {@code future} completes and the record has been reported where needed,
-     * with why the record fails its batch, or empty when it succeeded or is skipped. It never completes exceptionally.
-     */
-    CompletableFuture<Optional<Failure>> handle(SinkRecord record, CompletableFuture<Result> future) {
-        return future
-                .handle((result, throwable) -> outcome(record, result, throwable))
-                .exceptionally(throwable -> unhandled(record, throwable));
+    if (result != null) {
+      // Vespa rejected the operation, i.e. its test-and-set condition was not met.
+      return skipOrFail(
+          record,
+          new Failure(
+              Kind.REJECTED_RESULT, new FeedException(result.documentId(), result.toString())));
     }
 
-    private Optional<Failure> outcome(SinkRecord record, Result result, Throwable throwable) {
-        if (result != null && result.type() == Result.Type.success) {
-            return Optional.empty();
-        }
-
-        if (result != null) {
-            // Vespa rejected the operation, i.e. its test-and-set condition was not met.
-            return skipOrFail(record, new Failure(Kind.REJECTED_RESULT, new FeedException(result.documentId(), result.toString())));
-        }
-
-        IndexingFailure failure = IndexingFailure.of(throwable);
-        if (failure == IndexingFailure.MALFORMED_DOCUMENT) {
-            return skipOrFail(record, new Failure(Kind.MALFORMED_DOCUMENT, throwable));
-        }
-
-        logFailure(record, failure, throwable);
-        return Optional.of(new Failure(failure.kind(), throwable));
+    IndexingFailure failure = IndexingFailure.of(throwable);
+    if (failure == IndexingFailure.MALFORMED_DOCUMENT) {
+      return skipOrFail(record, new Failure(Kind.MALFORMED_DOCUMENT, throwable));
     }
 
-    // The errant record reporter throws "Tolerance exceeded" under errors.tolerance=none.
-    private static Optional<Failure> unhandled(SinkRecord record, Throwable throwable) {
-        Throwable cause = throwable instanceof CompletionException && throwable.getCause() != null ? throwable.getCause() : throwable;
-        log.error("Failed to handle the indexing result of {}.", RecordCoordinates.of(record), cause);
-        return Optional.of(new Failure(Kind.FATAL, cause));
+    logFailure(record, failure, throwable);
+    return Optional.of(new Failure(failure.kind(), throwable));
+  }
+
+  // The errant record reporter throws "Tolerance exceeded" under errors.tolerance=none.
+  private static Optional<Failure> unhandled(SinkRecord record, Throwable throwable) {
+    Throwable cause =
+        throwable instanceof CompletionException && throwable.getCause() != null
+            ? throwable.getCause()
+            : throwable;
+    log.error("Failed to handle the indexing result of {}.", RecordCoordinates.of(record), cause);
+    return Optional.of(new Failure(Kind.FATAL, cause));
+  }
+
+  private static void logFailure(SinkRecord record, IndexingFailure failure, Throwable throwable) {
+    if (failure == IndexingFailure.TRANSIENT) {
+      // The task retries the batch and logs it once.
+      log.debug("Failed to index {}.", RecordCoordinates.of(record), throwable);
+      return;
     }
 
-    private static void logFailure(SinkRecord record, IndexingFailure failure, Throwable throwable) {
-        if (failure == IndexingFailure.TRANSIENT) {
-            // The task retries the batch and logs it once.
-            log.debug("Failed to index {}.", RecordCoordinates.of(record), throwable);
-            return;
-        }
+    log.error("Failed to index {}.", RecordCoordinates.of(record), throwable);
+  }
 
-        log.error("Failed to index {}.", RecordCoordinates.of(record), throwable);
+  private Optional<Failure> skipOrFail(SinkRecord record, Failure failure) {
+    reporter.report(record, failure.cause);
+
+    switch (behaviorOnMalformedDoc) {
+      case IGNORE:
+        log.info(ignoreMessage(record), failure.cause);
+        return Optional.empty();
+      case WARN:
+        log.warn(ignoreMessage(record), failure.cause);
+        return Optional.empty();
+      case FAIL:
+      default:
+        log.error(failMessage(record), failure.cause);
+        return Optional.of(failure);
     }
+  }
 
-    private Optional<Failure> skipOrFail(SinkRecord record, Failure failure) {
-        reporter.report(record, failure.cause);
+  private static String ignoreMessage(SinkRecord record) {
+    return String.format(
+        "Failed to index %s. Ignoring and will not index it.", RecordCoordinates.of(record));
+  }
 
-        switch (behaviorOnMalformedDoc) {
-            case IGNORE:
-                log.info(ignoreMessage(record), failure.cause);
-                return Optional.empty();
-            case WARN:
-                log.warn(ignoreMessage(record), failure.cause);
-                return Optional.empty();
-            case FAIL:
-            default:
-                log.error(failMessage(record), failure.cause);
-                return Optional.of(failure);
-        }
-    }
-
-    private static String ignoreMessage(SinkRecord record) {
-        return String.format("Failed to index %s. Ignoring and will not index it.", RecordCoordinates.of(record));
-    }
-
-    private static String failMessage(SinkRecord record) {
-        return String.format(
-                "Failed to index %s. To ignore future document like this, change the configuration '%s' to '%s'.",
-                RecordCoordinates.of(record),
-                VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG,
-                VespaSinkConfig.BehaviorOnMalformedDoc.IGNORE
-        );
-    }
+  private static String failMessage(SinkRecord record) {
+    return String.format(
+        "Failed to index %s. To ignore future document like this, change the configuration '%s' to "
+            + "'%s'.",
+        RecordCoordinates.of(record),
+        VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG,
+        VespaSinkConfig.BehaviorOnMalformedDoc.IGNORE);
+  }
 }

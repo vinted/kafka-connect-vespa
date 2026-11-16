@@ -5,75 +5,77 @@ import com.github.jcustenborder.kafka.connect.utils.config.DocumentationImportan
 import com.github.jcustenborder.kafka.connect.utils.config.DocumentationNote;
 import com.github.jcustenborder.kafka.connect.utils.config.Title;
 import com.google.common.collect.ImmutableList;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import org.apache.kafka.common.config.Config;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigValue;
 import org.apache.kafka.connect.connector.Task;
 import org.apache.kafka.connect.sink.SinkConnector;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
+/** Writes records from Kafka to Vespa, giving every task the connector's configuration. */
 @Title("Kafka Connect Vespa Sink Connector")
 @Description("The Vespa Sink Connector is used to write data from Kafka to a Vespa search engine.")
-@DocumentationImportant("Values can be strings or bytes holding JSON, or schema-based data from any converter, such as "
-        + "Avro with Schema Registry, whose converter is bundled. In UPSERT mode the key is the document id and the "
-        + "namespace and document type default to the topic name; in RAW mode each value is a Vespa document "
-        + "operation and the key is not used.")
-@DocumentationNote("In UPSERT mode a record with a null value deletes the document with its key. In RAW mode such "
+@DocumentationImportant(
+    "Values can be strings or bytes holding JSON, or schema-based data from any converter, such as "
+        + "Avro with Schema Registry, whose converter is bundled. In UPSERT mode the key is the "
+        + "document id and the namespace and document type default to the topic name; in RAW mode "
+        + "each value is a Vespa document operation and the key is not used.")
+@DocumentationNote(
+    "In UPSERT mode a record with a null value deletes the document with its key. In RAW mode such "
         + "records are skipped; send a remove operation instead.")
 public class VespaSinkConnector extends SinkConnector {
-    private Map<String, String> props;
+  private Map<String, String> props;
 
-    /** Fails the connector, rather than each of its tasks, when the configuration is invalid. */
-    @Override
-    public void start(Map<String, String> props) {
-        new VespaSinkConfig(props);
-        this.props = props;
+  /** Fails the connector, rather than each of its tasks, when the configuration is invalid. */
+  @Override
+  public void start(Map<String, String> props) {
+    new VespaSinkConfig(props);
+    this.props = props;
+  }
+
+  /** Also reports settings that are valid alone but not together, on the setting to fix. */
+  @Override
+  public Config validate(Map<String, String> connectorConfigs) {
+    Config config = super.validate(connectorConfigs);
+    Map<String, ConfigValue> values = new HashMap<>();
+    config.configValues().forEach(value -> values.put(value.name(), value));
+
+    VespaSinkConfig.conflicts(name -> values.get(name).value())
+        .forEach((name, message) -> values.get(name).addErrorMessage(message));
+    return config;
+  }
+
+  @Override
+  public Class<? extends Task> taskClass() {
+    return VespaSinkTask.class;
+  }
+
+  @Override
+  public List<Map<String, String>> taskConfigs(int maxTasks) {
+    final List<Map<String, String>> taskConfigs = new ArrayList<>(maxTasks);
+
+    for (int i = 0; i < maxTasks; i++) {
+      taskConfigs.add(new HashMap<>(props));
     }
 
-    /** Also reports settings that are valid alone but not together, on the setting to fix. */
-    @Override
-    public Config validate(Map<String, String> connectorConfigs) {
-        Config config = super.validate(connectorConfigs);
-        Map<String, ConfigValue> values = new HashMap<>();
-        config.configValues().forEach(value -> values.put(value.name(), value));
+    return ImmutableList.copyOf(taskConfigs);
+  }
 
-        VespaSinkConfig.conflicts(name -> values.get(name).value())
-                .forEach((name, message) -> values.get(name).addErrorMessage(message));
-        return config;
-    }
+  @Override
+  public void stop() {
+    // Do nothing.
+  }
 
-    @Override
-    public Class<? extends Task> taskClass() {
-        return VespaSinkTask.class;
-    }
+  @Override
+  public ConfigDef config() {
+    return VespaSinkConfig.CONFIG;
+  }
 
-    @Override
-    public List<Map<String, String>> taskConfigs(int maxTasks) {
-        final List<Map<String, String>> taskConfigs = new ArrayList<>(maxTasks);
-
-        for (int i = 0; i < maxTasks; i++) {
-            taskConfigs.add(new HashMap<>(props));
-        }
-
-        return ImmutableList.copyOf(taskConfigs);
-    }
-
-    @Override
-    public void stop() {
-        // Do nothing.
-    }
-
-    @Override
-    public ConfigDef config() {
-        return VespaSinkConfig.CONFIG;
-    }
-
-    @Override
-    public String version() {
-        return VespaSinkConnectorVersion.getVersion();
-    }
+  @Override
+  public String version() {
+    return VespaSinkConnectorVersion.getVersion();
+  }
 }

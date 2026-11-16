@@ -1,5 +1,13 @@
 package com.vinted.kafka.connect.vespa;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.AfterEach;
@@ -7,145 +15,160 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
-
 /**
- * Checks what the connector promises while it feeds a running Vespa at full speed: every valid record lands, every
- * malformed document is reported once, every RAW operation is applied in order, and nothing is lost when Vespa
- * becomes unavailable mid-feed. Runs against the application in {@code src/test/resources/performance/app}.
+ * Checks what the connector promises while it feeds a running Vespa at full speed: every valid
+ * record lands, every malformed document is reported once, every RAW operation is applied in order,
+ * and nothing is lost when Vespa becomes unavailable mid-feed. Runs against the application in
+ * {@code src/test/resources/performance/app}.
  */
 @Tag("performance")
 class FeedUnderLoadTest {
-    private static final int RECORDS = Integer.getInteger("vespa.perf.records", 200_000);
-    private static final int BATCH = Integer.getInteger("vespa.perf.batch", 500);
-    private static final String OUTAGE_COMMAND = System.getProperty("vespa.perf.outage.command");
+  private static final int RECORDS = Integer.getInteger("vespa.perf.records", 200_000);
+  private static final int BATCH = Integer.getInteger("vespa.perf.batch", 500);
+  private static final String OUTAGE_COMMAND = System.getProperty("vespa.perf.outage.command");
 
-    private PerformanceTarget target;
-    private VespaAdmin vespa;
+  private PerformanceTarget target;
+  private VespaAdmin vespa;
 
-    @BeforeEach
-    void before() throws Exception {
-        target = PerformanceTarget.fromSystemProperties();
-        assumeTrue(target != null && target.indexes(), "set vespa.perf.endpoint to a running Vespa");
-        vespa = target.vespa();
-        target.clear();
+  @BeforeEach
+  void before() throws Exception {
+    target = PerformanceTarget.fromSystemProperties();
+    assumeTrue(target != null && target.indexes(), "set vespa.perf.endpoint to a running Vespa");
+    vespa = target.vespa();
+    target.clear();
+  }
+
+  @AfterEach
+  void after() throws Exception {
+    if (target != null) {
+      target.close();
+    }
+  }
+
+  @Test
+  void skipsEveryMalformedDocumentAndIndexesTheRest() throws Exception {
+    List<SinkRecord> records = new ArrayList<>(RECORDS);
+    int malformed = 0;
+    for (PerformanceRecords.Document document : PerformanceRecords.documents(RECORDS)) {
+      boolean isMalformed = records.size() % 100 == 0;
+      String json =
+          isMalformed
+              ? document.json.replaceFirst("\"views\":\\d+", "\"views\":\"many\"")
+              : document.json;
+      records.add(
+          new SinkRecord(
+              "items",
+              0,
+              Schema.STRING_SCHEMA,
+              document.key,
+              Schema.STRING_SCHEMA,
+              json,
+              records.size()));
+      malformed += isMalformed ? 1 : 0;
     }
 
-    @AfterEach
-    void after() throws Exception {
-        if (target != null) {
-            target.close();
-        }
+    ConnectWorker worker =
+        feed(Map.of(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE"), records);
+
+    assertEquals(RECORDS - malformed, vespa.count());
+    assertEquals(malformed, worker.reports().size());
+  }
+
+  @Test
+  void appliesEveryRawOperationInOrder() throws Exception {
+    int documents = RECORDS / 40;
+    int increments = 20;
+    List<String> operations = new ArrayList<>();
+    // The first half of the documents get all their operations in a row, so most share a batch; the
+    // rest get
+    // theirs round by round, so each lands in a different batch.
+    for (int document = 0; document < documents / 2; document++) {
+      operations.add(put(document));
+      for (int increment = 0; increment < increments; increment++) {
+        operations.add(increment(document));
+      }
+    }
+    for (int document = documents / 2; document < documents; document++) {
+      operations.add(put(document));
+    }
+    for (int increment = 0; increment < increments; increment++) {
+      for (int document = documents / 2; document < documents; document++) {
+        operations.add(increment(document));
+      }
     }
 
-    @Test
-    void skipsEveryMalformedDocumentAndIndexesTheRest() throws Exception {
-        List<SinkRecord> records = new ArrayList<>(RECORDS);
-        int malformed = 0;
-        for (PerformanceRecords.Document document : PerformanceRecords.documents(RECORDS)) {
-            boolean isMalformed = records.size() % 100 == 0;
-            String json = isMalformed ? document.json.replaceFirst("\"views\":\\d+", "\"views\":\"many\"") : document.json;
-            records.add(new SinkRecord("items", 0, Schema.STRING_SCHEMA, document.key, Schema.STRING_SCHEMA, json, records.size()));
-            malformed += isMalformed ? 1 : 0;
-        }
-
-        ConnectWorker worker = feed(Map.of(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE"), records);
-
-        assertEquals(RECORDS - malformed, vespa.count());
-        assertEquals(malformed, worker.reports().size());
+    List<SinkRecord> records = new ArrayList<>(operations.size());
+    for (String operation : operations) {
+      records.add(
+          new SinkRecord("items", 0, null, null, Schema.STRING_SCHEMA, operation, records.size()));
     }
 
-    @Test
-    void appliesEveryRawOperationInOrder() throws Exception {
-        int documents = RECORDS / 40;
-        int increments = 20;
-        List<String> operations = new ArrayList<>();
-        // The first half of the documents get all their operations in a row, so most share a batch; the rest get
-        // theirs round by round, so each lands in a different batch.
-        for (int document = 0; document < documents / 2; document++) {
-            operations.add(put(document));
-            for (int increment = 0; increment < increments; increment++) {
-                operations.add(increment(document));
-            }
-        }
-        for (int document = documents / 2; document < documents; document++) {
-            operations.add(put(document));
-        }
-        for (int increment = 0; increment < increments; increment++) {
-            for (int document = documents / 2; document < documents; document++) {
-                operations.add(increment(document));
-            }
-        }
+    feed(Map.of(VespaSinkConfig.OPERATIONAL_MODE_CONFIG, "RAW"), records);
 
-        List<SinkRecord> records = new ArrayList<>(operations.size());
-        for (String operation : operations) {
-            records.add(new SinkRecord("items", 0, null, null, Schema.STRING_SCHEMA, operation, records.size()));
-        }
+    assertEquals(Map.of((long) increments, (long) documents), vespa.countByViews());
+  }
 
-        feed(Map.of(VespaSinkConfig.OPERATIONAL_MODE_CONFIG, "RAW"), records);
+  @Test
+  void losesNothingWhenVespaRestartsMidFeed() throws Exception {
+    assumeTrue(
+        OUTAGE_COMMAND != null, "set vespa.perf.outage.command to a command that restarts Vespa");
+    PerformanceRecords.Factory jsonStrings = PerformanceRecords::jsonString;
+    List<SinkRecord> records = jsonStrings.records(PerformanceRecords.documents(RECORDS), 0);
+    List<SinkRecord> head = records.subList(0, records.size() / 4);
+    List<SinkRecord> tail = records.subList(head.size(), records.size());
+    ConnectWorker worker = start(Map.of());
+    List<Long> nanos = new ArrayList<>();
 
-        assertEquals(Map.of((long) increments, (long) documents), vespa.countByViews());
+    try {
+      nanos.addAll(worker.deliver(head, BATCH));
+      CompletableFuture<Void> outage = CompletableFuture.runAsync(FeedUnderLoadTest::restartVespa);
+      nanos.addAll(worker.deliver(tail, BATCH));
+      outage.join();
+    } finally {
+      worker.stop();
     }
 
-    @Test
-    void losesNothingWhenVespaRestartsMidFeed() throws Exception {
-        assumeTrue(OUTAGE_COMMAND != null, "set vespa.perf.outage.command to a command that restarts Vespa");
-        PerformanceRecords.Factory jsonStrings = PerformanceRecords::jsonString;
-        List<SinkRecord> records = jsonStrings.records(PerformanceRecords.documents(RECORDS), 0);
-        List<SinkRecord> head = records.subList(0, records.size() / 4);
-        List<SinkRecord> tail = records.subList(head.size(), records.size());
-        ConnectWorker worker = start(Map.of());
-        List<Long> nanos = new ArrayList<>();
+    System.out.printf(
+        "%n[performance] outage: %d redeliveries, slowest batch %.1f s%n",
+        worker.redeliveries(), Collections.max(nanos) / 1e9);
+    assertEquals(RECORDS, vespa.count());
+  }
 
-        try {
-            nanos.addAll(worker.deliver(head, BATCH));
-            CompletableFuture<Void> outage = CompletableFuture.runAsync(FeedUnderLoadTest::restartVespa);
-            nanos.addAll(worker.deliver(tail, BATCH));
-            outage.join();
-        } finally {
-            worker.stop();
-        }
-
-        System.out.printf("%n[performance] outage: %d redeliveries, slowest batch %.1f s%n",
-                worker.redeliveries(), Collections.max(nanos) / 1e9);
-        assertEquals(RECORDS, vespa.count());
+  private ConnectWorker feed(Map<String, String> overrides, List<SinkRecord> records)
+      throws InterruptedException {
+    ConnectWorker worker = start(overrides);
+    try {
+      worker.deliver(records, BATCH);
+    } finally {
+      worker.stop();
     }
+    return worker;
+  }
 
-    private ConnectWorker feed(Map<String, String> overrides, List<SinkRecord> records) throws InterruptedException {
-        ConnectWorker worker = start(overrides);
-        try {
-            worker.deliver(records, BATCH);
-        } finally {
-            worker.stop();
-        }
-        return worker;
-    }
+  private ConnectWorker start(Map<String, String> overrides) {
+    return target.start(overrides);
+  }
 
-    private ConnectWorker start(Map<String, String> overrides) {
-        return target.start(overrides);
+  private static void restartVespa() {
+    try {
+      Process process = new ProcessBuilder("sh", "-c", OUTAGE_COMMAND).inheritIO().start();
+      assertEquals(0, process.waitFor(), "outage command");
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
     }
+  }
 
-    private static void restartVespa() {
-        try {
-            Process process = new ProcessBuilder("sh", "-c", OUTAGE_COMMAND).inheritIO().start();
-            assertEquals(0, process.waitFor(), "outage command");
-        } catch (Exception e) {
-            throw new IllegalStateException(e);
-        }
-    }
+  private static String put(int document) {
+    return "{\"put\":\""
+        + PerformanceRecords.documentId("" + document)
+        + "\",\"fields\":{\"title\":\"item "
+        + document
+        + "\",\"views\":0}}";
+  }
 
-    private static String put(int document) {
-        return "{\"put\":\"" + PerformanceRecords.documentId("" + document) + "\",\"fields\":{\"title\":\"item " + document + "\",\"views\":0}}";
-    }
-
-    private static String increment(int document) {
-        return "{\"update\":\"" + PerformanceRecords.documentId("" + document) + "\",\"fields\":{\"views\":{\"increment\":1}}}";
-    }
+  private static String increment(int document) {
+    return "{\"update\":\""
+        + PerformanceRecords.documentId("" + document)
+        + "\",\"fields\":{\"views\":{\"increment\":1}}}";
+  }
 }
