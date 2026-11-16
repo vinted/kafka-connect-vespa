@@ -7,8 +7,10 @@ import java.util.stream.Collectors;
 import org.apache.kafka.connect.errors.ConnectException;
 
 /**
- * The one way a {@link VespaFeed} fails. Its message is why: each distinct reason with its kind,
- * one example and, for failed operations, how many failed for it. Its cause is the first failure.
+ * Why a {@link VespaFeed} failed to feed a batch: thrown when the task fails, and wrapped in the
+ * {@code RetriableException} that asks Connect to redeliver the batch while the retry budget lasts.
+ * Its message is why: each distinct reason with its kind, one example and, for failed operations,
+ * how many failed for it. Its cause is the first failure.
  */
 public class VespaFeedException extends ConnectException {
   /** What made the feed fail. */

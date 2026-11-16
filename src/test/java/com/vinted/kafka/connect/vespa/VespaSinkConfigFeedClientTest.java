@@ -232,8 +232,8 @@ class VespaSinkConfigFeedClientTest {
   }
 
   // GracePeriodCircuitBreaker exposes neither period, and takes no clock when built from the
-  // config. When a feed
-  // client upgrade renames these fields, check that both periods still reach the breaker.
+  // config. When a feed client upgrade renames these fields, check that both periods still reach
+  // the breaker.
   private static Duration breakerPeriod(Object breaker, String field) throws Exception {
     Field nanos = GracePeriodCircuitBreaker.class.getDeclaredField(field);
     nanos.setAccessible(true);
