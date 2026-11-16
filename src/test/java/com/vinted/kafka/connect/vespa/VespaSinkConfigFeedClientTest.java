@@ -1,26 +1,15 @@
 package com.vinted.kafka.connect.vespa;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import ai.vespa.feed.client.FeedClient;
 import ai.vespa.feed.client.FeedClientBuilder;
 import ai.vespa.feed.client.FeedException;
 import ai.vespa.feed.client.impl.GracePeriodCircuitBreaker;
 import com.vinted.kafka.connect.vespa.mocks.MockVespaServer;
-import org.bouncycastle.asn1.x500.X500Name;
-import org.bouncycastle.asn1.x509.Extension;
-import org.bouncycastle.asn1.x509.GeneralName;
-import org.bouncycastle.asn1.x509.GeneralNames;
-import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
-import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
-import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
-import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
-import org.eclipse.jetty.io.EndPoint;
-import org.eclipse.jetty.server.Request;
-import org.eclipse.jetty.util.ssl.SslContextFactory;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
-import javax.net.ssl.HostnameVerifier;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.io.Writer;
@@ -46,278 +35,318 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
+import javax.net.ssl.HostnameVerifier;
+import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.GeneralName;
+import org.bouncycastle.asn1.x509.GeneralNames;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
+import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
+import org.eclipse.jetty.io.EndPoint;
+import org.eclipse.jetty.server.Request;
+import org.eclipse.jetty.util.ssl.SslContextFactory;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+class VespaSinkConfigFeedClientTest {
+  private static final String KEY_STORE_PASSWORD = "changeit";
 
-public class VespaSinkConfigFeedClientTest {
-    private static final String KEY_STORE_PASSWORD = "changeit";
+  private final Map<String, String> params = new HashMap<>();
+  private final List<Certificate> presentedClientCertificates = new CopyOnWriteArrayList<>();
+  private MockVespaServer httpsServer;
+  private Identity server;
+  private Identity client;
 
-    private final Map<String, String> params = new HashMap<>();
-    private final List<Certificate> presentedClientCertificates = new CopyOnWriteArrayList<>();
-    private MockVespaServer httpsServer;
-    private Identity server;
-    private Identity client;
+  @TempDir Path tempDir;
 
-    @TempDir
-    Path tempDir;
+  @Test
+  void configuresDefaults() {
+    RecordingBuilder builder = configure();
 
-    @Test
-    void configuresDefaults() {
-        RecordingBuilder builder = configure();
+    assertEquals(List.of(1), builder.args("setConnectionsPerEndpoint"));
+    assertEquals(List.of(16), builder.args("setMaxStreamPerConnection"));
+    assertEquals(List.of(Duration.ZERO), builder.args("setConnectionTimeToLive"));
+    assertEquals(List.of(false), builder.args("setDryrun"));
+    assertEquals(List.of(false), builder.args("setSpeedTest"));
+    assertEquals(List.of(FeedClientBuilder.Compression.auto), builder.args("setCompression"));
+    assertEquals(List.of(1), builder.args("setInitialInflightFactor"));
+    assertTrue(builder.called("setCircuitBreaker"));
+    assertTrue(builder.called("setRetryStrategy"));
 
-        assertEquals(List.of(1), builder.args("setConnectionsPerEndpoint"));
-        assertEquals(List.of(16), builder.args("setMaxStreamPerConnection"));
-        assertEquals(List.of(Duration.ZERO), builder.args("setConnectionTimeToLive"));
-        assertEquals(List.of(false), builder.args("setDryrun"));
-        assertEquals(List.of(false), builder.args("setSpeedTest"));
-        assertEquals(List.of(FeedClientBuilder.Compression.auto), builder.args("setCompression"));
-        assertEquals(List.of(1), builder.args("setInitialInflightFactor"));
-        assertTrue(builder.called("setCircuitBreaker"));
-        assertTrue(builder.called("setRetryStrategy"));
+    for (String method :
+        Arrays.asList(
+            "noBenchmarking",
+            "addRequestHeader",
+            "setCertificate",
+            "setCaCertificatesFile",
+            "setHostnameVerifier",
+            "setProxy",
+            "setProxyCaCertificatesFile",
+            "setProxyHostnameVerifier",
+            "addProxyRequestHeader")) {
+      assertFalse(builder.called(method), method);
+    }
+  }
 
-        for (String method : Arrays.asList("noBenchmarking", "addRequestHeader", "setCertificate",
-                "setCaCertificatesFile", "setHostnameVerifier", "setProxy", "setProxyCaCertificatesFile",
-                "setProxyHostnameVerifier", "addProxyRequestHeader")) {
-            assertFalse(builder.called(method), method);
-        }
+  @Test
+  void configuresClientOptions() {
+    params.put("vespa.connection.ttl.ms", "60000");
+    params.put("vespa.compression", "gzip");
+    params.put("vespa.initial.inflight.factor", "8");
+    params.put("vespa.benchmark", "false");
+    params.put("vespa.request.headers", "X-Team: search, X-Trace:a:b");
+    params.put("vespa.cloud.token", "token123");
+
+    RecordingBuilder builder = configure();
+
+    assertEquals(List.of(Duration.ofMinutes(1)), builder.args("setConnectionTimeToLive"));
+    assertEquals(List.of(FeedClientBuilder.Compression.gzip), builder.args("setCompression"));
+    assertEquals(List.of(8), builder.args("setInitialInflightFactor"));
+    assertTrue(builder.called("noBenchmarking"));
+    assertEquals(
+        List.of("X-Team", "search", "X-Trace", "a:b", "Authorization", "Bearer token123"),
+        builder.args("addRequestHeader"));
+  }
+
+  @Test
+  void configuresDefaultRetryStrategy() {
+    FeedClient.RetryStrategy strategy =
+        (FeedClient.RetryStrategy) configure().args("setRetryStrategy").get(0);
+
+    assertEquals(10, strategy.retries());
+    for (FeedClient.OperationType type : FeedClient.OperationType.values()) {
+      assertTrue(strategy.retry(type), type.name());
+    }
+  }
+
+  @Test
+  void configuresRetryStrategy() {
+    params.put("vespa.retry.strategy.retries", "20");
+    params.put("vespa.retry.strategy.operation.types", "UPDATE,REMOVE");
+
+    FeedClient.RetryStrategy strategy =
+        (FeedClient.RetryStrategy) configure().args("setRetryStrategy").get(0);
+
+    assertEquals(20, strategy.retries());
+    assertFalse(strategy.retry(FeedClient.OperationType.PUT));
+    assertTrue(strategy.retry(FeedClient.OperationType.UPDATE));
+    assertTrue(strategy.retry(FeedClient.OperationType.REMOVE));
+  }
+
+  @Test
+  void configuresCircuitBreaker() throws Exception {
+    Object defaults = configure().args("setCircuitBreaker").get(0);
+    params.put("vespa.circuit.breaker.grace.period.ms", "5000");
+    params.put("vespa.max.failure.ms", "20000");
+    Object configured = configure().args("setCircuitBreaker").get(0);
+
+    assertEquals(Duration.ofSeconds(10), breakerPeriod(defaults, "graceNanos"));
+    assertEquals(Duration.ofMinutes(1), breakerPeriod(defaults, "doomNanos"));
+    assertEquals(Duration.ofSeconds(5), breakerPeriod(configured, "graceNanos"));
+    assertEquals(Duration.ofSeconds(20), breakerPeriod(configured, "doomNanos"));
+  }
+
+  @Test
+  void configuresMutualTls() {
+    params.put("vespa.ssl.certificate.path", "/certs/client.pem");
+    params.put("vespa.ssl.private.key.path", "/certs/client.key");
+    params.put("vespa.ssl.ca.certificates.path", "/certs/ca.pem");
+    params.put("vespa.ssl.hostname.verification.enabled", "false");
+
+    RecordingBuilder builder = configure();
+
+    assertEquals(
+        List.of(Paths.get("/certs/client.pem"), Paths.get("/certs/client.key")),
+        builder.args("setCertificate"));
+    assertEquals(List.of(Paths.get("/certs/ca.pem")), builder.args("setCaCertificatesFile"));
+    HostnameVerifier verifier = (HostnameVerifier) builder.args("setHostnameVerifier").get(0);
+    assertTrue(verifier.verify("any.host", null));
+  }
+
+  @Test
+  void configuresProxy() {
+    params.put("vespa.proxy.url", "https://proxy:3128");
+    params.put("vespa.proxy.ca.certificates.path", "/certs/proxy-ca.pem");
+    params.put("vespa.proxy.hostname.verification.enabled", "false");
+    params.put("vespa.proxy.request.headers", "Proxy-Authorization:Basic abc");
+
+    RecordingBuilder builder = configure();
+
+    assertEquals(List.of(URI.create("https://proxy:3128")), builder.args("setProxy"));
+    assertEquals(
+        List.of(Paths.get("/certs/proxy-ca.pem")), builder.args("setProxyCaCertificatesFile"));
+    assertTrue(builder.called("setProxyHostnameVerifier"));
+    assertEquals(
+        List.of("Proxy-Authorization", "Basic abc"), builder.args("addProxyRequestHeader"));
+  }
+
+  @Test
+  void connectsToServerRequiringClientCertificate() throws Exception {
+    startMutualTlsServer();
+    params.put("vespa.endpoint", httpsServer.url());
+    params.put("vespa.ssl.certificate.path", writePem("client.pem", client.certificate).toString());
+    params.put(
+        "vespa.ssl.private.key.path",
+        writePem("client.key", client.keyPair.getPrivate()).toString());
+    params.put("vespa.ssl.ca.certificates.path", writePem("ca.pem", server.certificate).toString());
+
+    FeedClient feedClient = new VespaSinkConfig(params).feedClient();
+    feedClient.close();
+
+    assertEquals(List.of(client.certificate), presentedClientCertificates);
+  }
+
+  @Test
+  void isRejectedByServerRequiringClientCertificateWhenNoneConfigured() throws Exception {
+    startMutualTlsServer();
+    params.put("vespa.endpoint", httpsServer.url());
+    params.put("vespa.ssl.ca.certificates.path", writePem("ca.pem", server.certificate).toString());
+
+    assertThrows(FeedException.class, () -> new VespaSinkConfig(params).feedClient());
+    assertTrue(presentedClientCertificates.isEmpty());
+  }
+
+  @Test
+  void failsWhenCertificateFilesAreMissing() {
+    params.put("vespa.endpoint", "https://localhost:8443");
+    params.put("vespa.ssl.certificate.path", tempDir.resolve("missing.pem").toString());
+    params.put("vespa.ssl.private.key.path", tempDir.resolve("missing.key").toString());
+
+    assertThrows(UncheckedIOException.class, () -> new VespaSinkConfig(params).feedClient());
+  }
+
+  @AfterEach
+  void stopServer() throws Exception {
+    if (httpsServer != null) {
+      httpsServer.close();
+    }
+  }
+
+  private RecordingBuilder configure() {
+    RecordingBuilder recorder = new RecordingBuilder();
+    new VespaSinkConfig(params).configure(recorder.builder);
+    return recorder;
+  }
+
+  // GracePeriodCircuitBreaker exposes neither period, and takes no clock when built from the
+  // config. When a feed
+  // client upgrade renames these fields, check that both periods still reach the breaker.
+  private static Duration breakerPeriod(Object breaker, String field) throws Exception {
+    Field nanos = GracePeriodCircuitBreaker.class.getDeclaredField(field);
+    nanos.setAccessible(true);
+    return Duration.ofNanos(nanos.getLong(breaker));
+  }
+
+  private void startMutualTlsServer() throws Exception {
+    server = Identity.create("localhost");
+    client = Identity.create("kafka-connect-vespa");
+
+    KeyStore keyStore = KeyStore.getInstance("PKCS12");
+    keyStore.load(null, null);
+    keyStore.setKeyEntry(
+        "server",
+        server.keyPair.getPrivate(),
+        KEY_STORE_PASSWORD.toCharArray(),
+        new X509Certificate[] {server.certificate});
+
+    KeyStore trustStore = KeyStore.getInstance("PKCS12");
+    trustStore.load(null, null);
+    trustStore.setCertificateEntry("client", client.certificate);
+
+    SslContextFactory.Server tls = new SslContextFactory.Server();
+    tls.setKeyStore(keyStore);
+    tls.setKeyStorePassword(KEY_STORE_PASSWORD);
+    tls.setTrustStore(trustStore);
+    tls.setNeedClientAuth(true);
+
+    Request.Handler acknowledge = MockVespaServer.acknowledge();
+    httpsServer =
+        MockVespaServer.https(
+            tls,
+            (request, response, callback) -> {
+              EndPoint.SslSessionData session =
+                  (EndPoint.SslSessionData) request.getAttribute(EndPoint.SslSessionData.ATTRIBUTE);
+              presentedClientCertificates.addAll(Arrays.asList(session.peerCertificates()));
+              return acknowledge.handle(request, response, callback);
+            },
+            acknowledge);
+  }
+
+  private Path writePem(String fileName, Object object) throws IOException {
+    Path path = tempDir.resolve(fileName);
+    try (Writer writer = Files.newBufferedWriter(path);
+        JcaPEMWriter pem = new JcaPEMWriter(writer)) {
+      pem.writeObject(object);
+    }
+    return path;
+  }
+
+  private static final class Identity {
+    final KeyPair keyPair;
+    final X509Certificate certificate;
+
+    private Identity(KeyPair keyPair, X509Certificate certificate) {
+      this.keyPair = keyPair;
+      this.certificate = certificate;
     }
 
-    @Test
-    void configuresClientOptions() {
-        params.put("vespa.connection.ttl.ms", "60000");
-        params.put("vespa.compression", "gzip");
-        params.put("vespa.initial.inflight.factor", "8");
-        params.put("vespa.benchmark", "false");
-        params.put("vespa.request.headers", "X-Team: search, X-Trace:a:b");
-        params.put("vespa.cloud.token", "token123");
+    static Identity create(String hostname) throws Exception {
+      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+      generator.initialize(2048);
+      KeyPair keyPair = generator.generateKeyPair();
 
-        RecordingBuilder builder = configure();
-
-        assertEquals(List.of(Duration.ofMinutes(1)), builder.args("setConnectionTimeToLive"));
-        assertEquals(List.of(FeedClientBuilder.Compression.gzip), builder.args("setCompression"));
-        assertEquals(List.of(8), builder.args("setInitialInflightFactor"));
-        assertTrue(builder.called("noBenchmarking"));
-        assertEquals(
-                List.of("X-Team", "search", "X-Trace", "a:b", "Authorization", "Bearer token123"),
-                builder.args("addRequestHeader"));
+      X500Name subject = new X500Name("CN=" + hostname);
+      Instant now = Instant.now();
+      X509Certificate certificate =
+          new JcaX509CertificateConverter()
+              .getCertificate(
+                  new JcaX509v3CertificateBuilder(
+                          subject,
+                          BigInteger.valueOf(now.toEpochMilli()),
+                          Date.from(now.minus(Duration.ofDays(1))),
+                          Date.from(now.plus(Duration.ofDays(1))),
+                          subject,
+                          keyPair.getPublic())
+                      .addExtension(
+                          Extension.subjectAlternativeName,
+                          false,
+                          new GeneralNames(new GeneralName(GeneralName.dNSName, hostname)))
+                      .build(
+                          new JcaContentSignerBuilder("SHA256withRSA")
+                              .build(keyPair.getPrivate())));
+      return new Identity(keyPair, certificate);
     }
+  }
 
-    @Test
-    void configuresDefaultRetryStrategy() {
-        FeedClient.RetryStrategy strategy = (FeedClient.RetryStrategy) configure().args("setRetryStrategy").get(0);
-
-        assertEquals(10, strategy.retries());
-        for (FeedClient.OperationType type : FeedClient.OperationType.values()) {
-            assertTrue(strategy.retry(type), type.name());
-        }
-    }
-
-    @Test
-    void configuresRetryStrategy() {
-        params.put("vespa.retry.strategy.retries", "20");
-        params.put("vespa.retry.strategy.operation.types", "UPDATE,REMOVE");
-
-        FeedClient.RetryStrategy strategy = (FeedClient.RetryStrategy) configure().args("setRetryStrategy").get(0);
-
-        assertEquals(20, strategy.retries());
-        assertFalse(strategy.retry(FeedClient.OperationType.PUT));
-        assertTrue(strategy.retry(FeedClient.OperationType.UPDATE));
-        assertTrue(strategy.retry(FeedClient.OperationType.REMOVE));
-    }
-
-    @Test
-    void configuresCircuitBreaker() throws Exception {
-        Object defaults = configure().args("setCircuitBreaker").get(0);
-        params.put("vespa.circuit.breaker.grace.period.ms", "5000");
-        params.put("vespa.max.failure.ms", "20000");
-        Object configured = configure().args("setCircuitBreaker").get(0);
-
-        assertEquals(Duration.ofSeconds(10), breakerPeriod(defaults, "graceNanos"));
-        assertEquals(Duration.ofMinutes(1), breakerPeriod(defaults, "doomNanos"));
-        assertEquals(Duration.ofSeconds(5), breakerPeriod(configured, "graceNanos"));
-        assertEquals(Duration.ofSeconds(20), breakerPeriod(configured, "doomNanos"));
-    }
-
-    @Test
-    void configuresMutualTls() {
-        params.put("vespa.ssl.certificate.path", "/certs/client.pem");
-        params.put("vespa.ssl.private.key.path", "/certs/client.key");
-        params.put("vespa.ssl.ca.certificates.path", "/certs/ca.pem");
-        params.put("vespa.ssl.hostname.verification.enabled", "false");
-
-        RecordingBuilder builder = configure();
-
-        assertEquals(
-                List.of(Paths.get("/certs/client.pem"), Paths.get("/certs/client.key")),
-                builder.args("setCertificate"));
-        assertEquals(List.of(Paths.get("/certs/ca.pem")), builder.args("setCaCertificatesFile"));
-        HostnameVerifier verifier = (HostnameVerifier) builder.args("setHostnameVerifier").get(0);
-        assertTrue(verifier.verify("any.host", null));
-    }
-
-    @Test
-    void configuresProxy() {
-        params.put("vespa.proxy.url", "https://proxy:3128");
-        params.put("vespa.proxy.ca.certificates.path", "/certs/proxy-ca.pem");
-        params.put("vespa.proxy.hostname.verification.enabled", "false");
-        params.put("vespa.proxy.request.headers", "Proxy-Authorization:Basic abc");
-
-        RecordingBuilder builder = configure();
-
-        assertEquals(List.of(URI.create("https://proxy:3128")), builder.args("setProxy"));
-        assertEquals(List.of(Paths.get("/certs/proxy-ca.pem")), builder.args("setProxyCaCertificatesFile"));
-        assertTrue(builder.called("setProxyHostnameVerifier"));
-        assertEquals(List.of("Proxy-Authorization", "Basic abc"), builder.args("addProxyRequestHeader"));
-    }
-
-    @Test
-    void connectsToServerRequiringClientCertificate() throws Exception {
-        startMutualTlsServer();
-        params.put("vespa.endpoint", httpsServer.url());
-        params.put("vespa.ssl.certificate.path", writePem("client.pem", client.certificate).toString());
-        params.put("vespa.ssl.private.key.path", writePem("client.key", client.keyPair.getPrivate()).toString());
-        params.put("vespa.ssl.ca.certificates.path", writePem("ca.pem", server.certificate).toString());
-
-        FeedClient feedClient = new VespaSinkConfig(params).feedClient();
-        feedClient.close();
-
-        assertEquals(List.of(client.certificate), presentedClientCertificates);
-    }
-
-    @Test
-    void isRejectedByServerRequiringClientCertificateWhenNoneConfigured() throws Exception {
-        startMutualTlsServer();
-        params.put("vespa.endpoint", httpsServer.url());
-        params.put("vespa.ssl.ca.certificates.path", writePem("ca.pem", server.certificate).toString());
-
-        assertThrows(FeedException.class, () -> new VespaSinkConfig(params).feedClient());
-        assertTrue(presentedClientCertificates.isEmpty());
-    }
-
-    @Test
-    void failsWhenCertificateFilesAreMissing() {
-        params.put("vespa.endpoint", "https://localhost:8443");
-        params.put("vespa.ssl.certificate.path", tempDir.resolve("missing.pem").toString());
-        params.put("vespa.ssl.private.key.path", tempDir.resolve("missing.key").toString());
-
-        assertThrows(UncheckedIOException.class, () -> new VespaSinkConfig(params).feedClient());
-    }
-
-    @AfterEach
-    void stopServer() throws Exception {
-        if (httpsServer != null) {
-            httpsServer.close();
-        }
-    }
-
-    private RecordingBuilder configure() {
-        RecordingBuilder recorder = new RecordingBuilder();
-        new VespaSinkConfig(params).configure(recorder.builder);
-        return recorder;
-    }
-
-    // GracePeriodCircuitBreaker exposes neither period, and takes no clock when built from the config. When a feed
-    // client upgrade renames these fields, check that both periods still reach the breaker.
-    private static Duration breakerPeriod(Object breaker, String field) throws Exception {
-        Field nanos = GracePeriodCircuitBreaker.class.getDeclaredField(field);
-        nanos.setAccessible(true);
-        return Duration.ofNanos(nanos.getLong(breaker));
-    }
-
-    private void startMutualTlsServer() throws Exception {
-        server = Identity.create("localhost");
-        client = Identity.create("kafka-connect-vespa");
-
-        KeyStore keyStore = KeyStore.getInstance("PKCS12");
-        keyStore.load(null, null);
-        keyStore.setKeyEntry("server", server.keyPair.getPrivate(), KEY_STORE_PASSWORD.toCharArray(),
-                new X509Certificate[]{server.certificate});
-
-        KeyStore trustStore = KeyStore.getInstance("PKCS12");
-        trustStore.load(null, null);
-        trustStore.setCertificateEntry("client", client.certificate);
-
-        SslContextFactory.Server tls = new SslContextFactory.Server();
-        tls.setKeyStore(keyStore);
-        tls.setKeyStorePassword(KEY_STORE_PASSWORD);
-        tls.setTrustStore(trustStore);
-        tls.setNeedClientAuth(true);
-
-        Request.Handler acknowledge = MockVespaServer.acknowledge();
-        httpsServer = MockVespaServer.https(tls, (request, response, callback) -> {
-            EndPoint.SslSessionData session =
-                    (EndPoint.SslSessionData) request.getAttribute(EndPoint.SslSessionData.ATTRIBUTE);
-            presentedClientCertificates.addAll(Arrays.asList(session.peerCertificates()));
-            return acknowledge.handle(request, response, callback);
-        }, acknowledge);
-    }
-
-    private Path writePem(String fileName, Object object) throws IOException {
-        Path path = tempDir.resolve(fileName);
-        try (Writer writer = Files.newBufferedWriter(path); JcaPEMWriter pem = new JcaPEMWriter(writer)) {
-            pem.writeObject(object);
-        }
-        return path;
-    }
-
-    private static final class Identity {
-        final KeyPair keyPair;
-        final X509Certificate certificate;
-
-        private Identity(KeyPair keyPair, X509Certificate certificate) {
-            this.keyPair = keyPair;
-            this.certificate = certificate;
-        }
-
-        static Identity create(String hostname) throws Exception {
-            KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-            generator.initialize(2048);
-            KeyPair keyPair = generator.generateKeyPair();
-
-            X500Name subject = new X500Name("CN=" + hostname);
-            Instant now = Instant.now();
-            X509Certificate certificate = new JcaX509CertificateConverter().getCertificate(
-                    new JcaX509v3CertificateBuilder(
-                            subject,
-                            BigInteger.valueOf(now.toEpochMilli()),
-                            Date.from(now.minus(Duration.ofDays(1))),
-                            Date.from(now.plus(Duration.ofDays(1))),
-                            subject,
-                            keyPair.getPublic())
-                            .addExtension(Extension.subjectAlternativeName, false,
-                                    new GeneralNames(new GeneralName(GeneralName.dNSName, hostname)))
-                            .build(new JcaContentSignerBuilder("SHA256withRSA").build(keyPair.getPrivate())));
-            return new Identity(keyPair, certificate);
-        }
-    }
-
-    private static class RecordingBuilder {
-        private final List<Object[]> calls = new ArrayList<>();
-        final FeedClientBuilder builder = (FeedClientBuilder) Proxy.newProxyInstance(
+  private static class RecordingBuilder {
+    private final List<Object[]> calls = new ArrayList<>();
+    final FeedClientBuilder builder =
+        (FeedClientBuilder)
+            Proxy.newProxyInstance(
                 FeedClientBuilder.class.getClassLoader(),
-                new Class<?>[]{FeedClientBuilder.class},
+                new Class<?>[] {FeedClientBuilder.class},
                 (proxy, method, args) -> {
-                    Object[] call = new Object[(args == null ? 0 : args.length) + 1];
-                    call[0] = method.getName();
-                    if (args != null) {
-                        System.arraycopy(args, 0, call, 1, args.length);
-                    }
-                    calls.add(call);
-                    return method.getReturnType() == FeedClientBuilder.class ? proxy : null;
+                  Object[] call = new Object[(args == null ? 0 : args.length) + 1];
+                  call[0] = method.getName();
+                  if (args != null) {
+                    System.arraycopy(args, 0, call, 1, args.length);
+                  }
+                  calls.add(call);
+                  return method.getReturnType() == FeedClientBuilder.class ? proxy : null;
                 });
 
-        boolean called(String method) {
-            return calls.stream().anyMatch(call -> call[0].equals(method));
-        }
-
-        List<Object> args(String method) {
-            return calls.stream()
-                    .filter(call -> call[0].equals(method))
-                    .flatMap(call -> Arrays.stream(call).skip(1))
-                    .collect(Collectors.toList());
-        }
+    boolean called(String method) {
+      return calls.stream().anyMatch(call -> call[0].equals(method));
     }
+
+    List<Object> args(String method) {
+      return calls.stream()
+          .filter(call -> call[0].equals(method))
+          .flatMap(call -> Arrays.stream(call).skip(1))
+          .collect(Collectors.toList());
+    }
+  }
 }
