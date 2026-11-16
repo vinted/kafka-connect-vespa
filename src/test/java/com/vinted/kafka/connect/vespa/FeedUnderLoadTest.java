@@ -79,9 +79,8 @@ class FeedUnderLoadTest {
     int documents = RECORDS / 40;
     int increments = 20;
     List<String> operations = new ArrayList<>();
-    // The first half of the documents get all their operations in a row, so most share a batch; the
-    // rest get
-    // theirs round by round, so each lands in a different batch.
+    // The first half of the documents get all their operations in a row, so most share a batch;
+    // the rest get theirs round by round, so each lands in a different batch.
     for (int document = 0; document < documents / 2; document++) {
       operations.add(put(document));
       for (int increment = 0; increment < increments; increment++) {

@@ -53,9 +53,8 @@ final class RecordReporter {
     reported.clear();
   }
 
-  // The record's failure, also the cause of the reporter's, can echo record content, so only its
-  // type
-  // is kept.
+  // The record's failure, also the cause of the reporter's, can echo record content, so only
+  // its type is kept.
   private static ConnectException unreported(
       RecordCoordinates coordinates, Throwable error, ConnectException e) {
     return new ConnectException(
