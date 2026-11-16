@@ -1,7 +1,6 @@
 package com.vinted.kafka.connect.vespa;
 
 import ai.vespa.feed.client.FeedClient;
-import com.github.jcustenborder.kafka.connect.utils.VersionUtil;
 import com.vinted.kafka.connect.vespa.feeders.VespaFeed;
 import java.io.IOException;
 import java.util.Collection;
@@ -93,6 +92,6 @@ public class VespaSinkTask extends SinkTask {
 
   @Override
   public String version() {
-    return VersionUtil.version(this.getClass());
+    return VespaSinkConnectorVersion.getVersion();
   }
 }

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import ai.vespa.feed.client.FeedException;
 import ai.vespa.feed.client.OperationParameters;
 import com.google.common.base.Strings;
 import com.vinted.kafka.connect.vespa.mocks.FakeFeedClient;
@@ -119,6 +120,28 @@ class VespaRawSinkTaskTest {
 
     assertEquals(List.of(), worker.reported());
     assertNothingSent(client);
+  }
+
+  @Test
+  void deliversBatchOfTombstonesWhileVespaIsUnreachable() {
+    FeedException unreachable =
+        new FeedException(
+            "failed handshake with server after PT30S",
+            new java.net.ConnectException("Connection refused"));
+    ConnectWorker unreachableWorker =
+        new ConnectWorker(
+            new VespaSinkTask(
+                config -> {
+                  throw unreachable;
+                }));
+    unreachableWorker.start(params);
+
+    try {
+      unreachableWorker.put(List.of(record("set1", null), record("set2", null)));
+      assertEquals(0, unreachableWorker.redeliveries());
+    } finally {
+      unreachableWorker.stop();
+    }
   }
 
   @Test

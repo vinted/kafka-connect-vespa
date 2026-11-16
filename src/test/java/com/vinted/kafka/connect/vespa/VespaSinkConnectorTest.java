@@ -4,6 +4,7 @@ import static com.vinted.kafka.connect.vespa.VespaSinkConfig.SSL_CERTIFICATE_PAT
 import static com.vinted.kafka.connect.vespa.VespaSinkConfig.SSL_PRIVATE_KEY_PATH_CONFIG;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
@@ -60,6 +61,12 @@ class VespaSinkConnectorTest {
     connector.start(props);
 
     assertEquals(List.of(props, props, props), connector.taskConfigs(3));
+  }
+
+  @Test
+  void reportsTheBuiltVersionLikeItsTasks() {
+    assertTrue(connector.version().matches("\\d+\\.\\d+\\.\\d+(-SNAPSHOT)?"), connector.version());
+    assertEquals(connector.version(), new VespaSinkTask().version());
   }
 
   private static Map<String, List<String>> errors(Config config) {
