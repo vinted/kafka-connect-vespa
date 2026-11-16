@@ -59,19 +59,22 @@ abstract class VespaOperation {
   }
 
   /**
-   * An operation in Vespa's document JSON format, which carries its own id, condition and create.
+   * An operation in Vespa's document JSON format, which carries its own id, condition and create;
+   * the parameters add the rest.
    */
   static final class DocumentJson extends VespaOperation {
     final String json;
+    final OperationParameters parameters;
 
-    DocumentJson(SinkRecord record, String json) {
+    DocumentJson(SinkRecord record, String json, OperationParameters parameters) {
       super(record);
       this.json = json;
+      this.parameters = parameters;
     }
 
     @Override
     CompletableFuture<Result> submit(FeedSession.Client client) {
-      return client.feed(json);
+      return client.feed(json, parameters);
     }
   }
 }

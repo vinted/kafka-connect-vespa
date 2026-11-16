@@ -165,6 +165,25 @@ class VespaRawSinkTaskTest {
   }
 
   @Test
+  void appliesTimeoutRouteAndTracelevelButNotTheConfiguredCreate() {
+    params.put(VespaSinkConfig.OPERATION_TIMEOUT_MS_CONFIG, "20");
+    params.put(VespaSinkConfig.OPERATION_ROUTE_CONFIG, "custom");
+    params.put(VespaSinkConfig.OPERATION_TRACELEVEL_CONFIG, "3");
+    params.put(VespaSinkConfig.OPERATION_CONDITION_CONFIG, "test_document_type.locked == false");
+    params.put(VespaSinkConfig.OPERATION_CREATE_IF_NON_EXISTENT_CONFIG, "true");
+    restart();
+
+    worker.put(
+        List.of(
+            record(
+                "set1", "{\"put\":\"id:test_namespace:test_document_type::set1\",\"fields\":{}}")));
+
+    OperationParameters expected =
+        OperationParameters.empty().timeout(Duration.ofMillis(20)).route("custom").tracelevel(3);
+    assertEquals(expected, client.operations().get(0).parameters);
+  }
+
+  @Test
   void reportsAndDropsInvalidMessagesWhenConfigured() {
     params.put(VespaSinkConfig.DROP_INVALID_MESSAGE_CONFIG, "true");
     restart();

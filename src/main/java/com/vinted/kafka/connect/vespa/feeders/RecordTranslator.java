@@ -35,7 +35,7 @@ abstract class RecordTranslator<T extends VespaOperation> {
       case UPSERT:
         return new UpsertTranslator(config, reporter);
       case RAW:
-        return new RawTranslator(config.dropInvalidMessage(), reporter);
+        return new RawTranslator(config, reporter);
       default:
         throw new ConnectException(
             String.format("Unknown operational mode: %s", config.operationalMode()));

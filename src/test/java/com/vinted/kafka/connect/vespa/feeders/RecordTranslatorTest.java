@@ -10,6 +10,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import ai.vespa.feed.client.OperationParameters;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentJson;
 import java.util.List;
 import java.util.Optional;
@@ -64,7 +65,7 @@ class RecordTranslatorTest {
           throw BUG;
         }
 
-        return Optional.of(new DocumentJson(record, "{}"));
+        return Optional.of(new DocumentJson(record, "{}", OperationParameters.empty()));
       }
 
       @Override
