@@ -198,13 +198,13 @@ Document type as defined in services.xml and the schema. Defaults to topic name 
 
 `vespa.operational.mode`
 
-The operational mode of the connector. Valid options are upsert and raw. Upsert mode puts each record as a whole
-document, replacing any existing one, and turns tombstones into removes. Raw mode executes all operations using document
-json format as explained in https://docs.vespa.ai/en/reference/document-json-format.html.
+The operational mode of the connector. Valid options are UPSERT and RAW, in any case. UPSERT mode puts each record as a
+whole document, replacing any existing one, and turns tombstones into removes. RAW mode executes all operations using
+document json format as explained in https://docs.vespa.ai/en/reference/document-json-format.html.
 
 * Type: string
 * Default: UPSERT
-* Valid Values: Matches: `UPSERT`, `RAW`
+* Valid Values: (case insensitive) [UPSERT, RAW]
 * Importance: high
 
 `vespa.retry.strategy.retries`
@@ -373,11 +373,11 @@ Whether to drop kafka message when it cannot be converted to output message.
 `vespa.behavior.on.malformed.documents`
 
 How to handle malformed documents (an HTTP 400, or document JSON the feed client cannot parse) and operations whose
-test-and-set condition is not met. Valid options are `IGNORE`, `WARN`, and `FAIL`.
+test-and-set condition is not met. Valid options are `IGNORE`, `WARN`, and `FAIL`, in any case.
 
 * Type: string
 * Default: FAIL
-* Valid Values: Matches: `IGNORE`, `WARN`, `FAIL`
+* Valid Values: (case insensitive) [IGNORE, WARN, FAIL]
 * Importance: low
 
 #### Security
