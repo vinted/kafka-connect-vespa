@@ -28,7 +28,7 @@ jobs:
           VERSION="${TAG#v}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           mvn -B -ntp versions:set -DnewVersion="$VERSION" -DgenerateBackupPoms=false
-          mvn -B -V -ntp clean package
+          mvn -B -V -ntp clean verify
 
       - name: Publish the GitHub release
         run: |
