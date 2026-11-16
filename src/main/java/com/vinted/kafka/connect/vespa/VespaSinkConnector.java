@@ -5,7 +5,9 @@ import com.github.jcustenborder.kafka.connect.utils.config.DocumentationImportan
 import com.github.jcustenborder.kafka.connect.utils.config.DocumentationNote;
 import com.github.jcustenborder.kafka.connect.utils.config.Title;
 import com.google.common.collect.ImmutableList;
+import org.apache.kafka.common.config.Config;
 import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.config.ConfigValue;
 import org.apache.kafka.connect.connector.Task;
 import org.apache.kafka.connect.sink.SinkConnector;
 
@@ -25,9 +27,23 @@ import java.util.Map;
 public class VespaSinkConnector extends SinkConnector {
     private Map<String, String> props;
 
+    /** Fails the connector, rather than each of its tasks, when the configuration is invalid. */
     @Override
     public void start(Map<String, String> props) {
+        new VespaSinkConfig(props);
         this.props = props;
+    }
+
+    /** Also reports settings that are valid alone but not together, on the setting to fix. */
+    @Override
+    public Config validate(Map<String, String> connectorConfigs) {
+        Config config = super.validate(connectorConfigs);
+        Map<String, ConfigValue> values = new HashMap<>();
+        config.configValues().forEach(value -> values.put(value.name(), value));
+
+        VespaSinkConfig.conflicts(name -> values.get(name).value())
+                .forEach((name, message) -> values.get(name).addErrorMessage(message));
+        return config;
     }
 
     @Override
