@@ -54,6 +54,8 @@ class VespaSinkConfigTest {
   void rejectsInvalidValues() {
     assertInvalid("vespa.operational.mode", "rawr");
     assertInvalid("vespa.behavior.on.malformed.documents", "skip");
+    assertInvalid("vespa.endpoint", "node1:8080");
+    assertInvalid("vespa.endpoint", "localhost:8080");
     assertInvalid("vespa.compression", "zstd");
     assertInvalid("vespa.initial.inflight.factor", "0");
     assertInvalid("vespa.connection.ttl.ms", "-1");
