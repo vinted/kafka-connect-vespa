@@ -83,7 +83,7 @@ public class VespaSinkTask extends SinkTask {
     try {
       feed.close();
     } catch (IOException e) {
-      log.error("Error closing Vespa feeder.", e);
+      log.error("Error closing the Vespa feed.", e);
       throw new ConnectException(e);
     } finally {
       feed = null;
