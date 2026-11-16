@@ -12,7 +12,8 @@ import org.apache.kafka.connect.sink.SinkRecord;
 /**
  * Reports failed records to the errant record reporter, each once until {@link #forget()}. A
  * reporter that throws, as it does once {@code errors.tolerance=none} is exceeded, is a fatal
- * failure of the record.
+ * failure of the record. Reports from feed client callback threads reach the reporter one at a
+ * time.
  */
 final class RecordReporter {
   private final ErrantRecordReporter reporter;
@@ -34,11 +35,17 @@ final class RecordReporter {
     }
 
     try {
-      reporter.report(record, error);
+      send(record, error);
       return Optional.empty();
     } catch (ConnectException e) {
       return Optional.of(new Failure(Kind.FATAL, unreported(coordinates, error, e)));
     }
+  }
+
+  // Kafka's errant record reporter is not safe to call from several threads at once: it loses track
+  // of reports, and Connect may commit their offsets before they are written.
+  private synchronized void send(SinkRecord record, Throwable error) {
+    reporter.report(record, error);
   }
 
   /** Forgets which records were reported, once their batch is delivered or given up on. */

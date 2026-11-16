@@ -10,9 +10,11 @@ import ai.vespa.feed.client.FeedException;
 import ai.vespa.feed.client.Result;
 import com.vinted.kafka.connect.vespa.mocks.CallbackExecutor;
 import com.vinted.kafka.connect.vespa.mocks.FakeFeedClient;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -146,6 +148,25 @@ class VespaSinkTaskRetryTest {
     assertNotRetriable(() -> worker.put(batch));
 
     assertEquals(List.of(malformed), worker.reported());
+  }
+
+  @Test
+  void reportsRecordsOneByOneWhileResultsArriveConcurrentlyOnCallbackThreads() throws Exception {
+    params.put(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, "IGNORE");
+    List<SinkRecord> batch = List.of(record("malformed-1"), record("malformed-2"));
+
+    try (CallbackExecutor callbacks = new CallbackExecutor(batch.size())) {
+      client =
+          new FakeFeedClient(callbacks)
+              .answer("id:ns:dt::malformed-1", failure(BAD_REQUEST))
+              .answer("id:ns:dt::malformed-2", failure(BAD_REQUEST));
+      worker.reportsTaking(Duration.ofMillis(200)).start(params);
+
+      worker.put(batch);
+    }
+
+    assertEquals(Set.copyOf(batch), Set.copyOf(worker.reported()));
+    assertEquals(1, worker.mostConcurrentReports());
   }
 
   @Test
