@@ -56,7 +56,7 @@ public class VespaFeed implements Closeable {
         new RetryBudget(config.maxRetries(), config.retryBackoffMs(), backOff, reportingOnce),
         RecordTranslator.of(config, reportingOnce),
         new IndexingResultHandler(config.behaviorOnMalformedDoc(), reportingOnce),
-        FeedSession.open(clients, config.operationParameters()));
+        FeedSession.open(clients));
   }
 
   /**
