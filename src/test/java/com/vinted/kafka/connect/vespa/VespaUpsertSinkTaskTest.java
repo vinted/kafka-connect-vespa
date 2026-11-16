@@ -1,12 +1,14 @@
 package com.vinted.kafka.connect.vespa;
 
 import static com.vinted.kafka.connect.vespa.mocks.FakeFeedClient.Answer.failure;
+import static com.vinted.kafka.connect.vespa.mocks.FakeFeedClient.Answer.refusal;
 import static com.vinted.kafka.connect.vespa.mocks.FakeFeedClient.Answer.result;
 import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertNothingSent;
 import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertSent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -247,6 +249,32 @@ class VespaUpsertSinkTaskTest {
     assertEquals(List.of(invalid), worker.reported());
     assertInstanceOf(DataException.class, worker.reports().get(0).error);
     assertNothingSent(client);
+  }
+
+  @Test
+  void failsEveryOperationTheClientRefusesInsteadOfLosingTheOthers() {
+    IllegalStateException closed = new IllegalStateException("Client is closed");
+    client.answerAll(refusal(closed));
+    worker.start(params);
+
+    VespaFeedException thrown =
+        assertThrows(
+            VespaFeedException.class,
+            () -> worker.put(List.of(record("set1", "{}"), record("set2", "{}"))));
+
+    assertSame(closed, thrown.getCause());
+    assertEquals(
+        "fatal failure in 2 operations: IllegalStateException: Client is closed",
+        thrown.getMessage());
+  }
+
+  @Test
+  void closesTheFeedClientWhenStopped() {
+    worker.start(params);
+
+    worker.stop();
+
+    assertTrue(client.isClosed());
   }
 
   @Test
