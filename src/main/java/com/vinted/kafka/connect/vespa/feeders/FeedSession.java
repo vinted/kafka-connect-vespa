@@ -54,13 +54,17 @@ final class FeedSession implements Closeable {
 
   /**
    * Submits the operations through one working client, returning their results in order. An
-   * operation the client refuses fails its result. Every document JSON operation in a session has
-   * the same parameters, as the client's JSON feeder takes them when built rather than per
-   * operation.
+   * operation the client refuses fails its result. Submitting no operations needs no client. Every
+   * document JSON operation in a session has the same parameters, as the client's JSON feeder takes
+   * them when built rather than per operation.
    *
    * @throws VespaFeedException when the client fails to build
    */
   List<CompletableFuture<Result>> submit(List<? extends VespaOperation> operations) {
+    if (operations.isEmpty()) {
+      return List.of();
+    }
+
     Client client = client();
     return operations.stream()
         .map(operation -> send(operation, client))
