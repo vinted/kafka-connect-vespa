@@ -53,7 +53,7 @@ class RecordTranslatorTest {
   }
 
   private RecordTranslator<DocumentJson> translator(boolean dropInvalidMessage) {
-    return new RecordTranslator<>(dropInvalidMessage, reporter) {
+    return new RecordTranslator<>(dropInvalidMessage, new RecordReporter(reporter)) {
       @Override
       Optional<DocumentJson> translate(SinkRecord record) {
         if ("invalid".equals(record.value())) {

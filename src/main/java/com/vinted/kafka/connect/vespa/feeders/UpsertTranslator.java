@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.apache.kafka.connect.errors.DataException;
-import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 
 /**
@@ -24,7 +23,7 @@ final class UpsertTranslator extends RecordTranslator<DocumentOperation> {
   private final OperationParameters putParameters;
   private final OperationParameters removeParameters;
 
-  UpsertTranslator(VespaSinkConfig config, ErrantRecordReporter reporter) {
+  UpsertTranslator(VespaSinkConfig config, RecordReporter reporter) {
     super(config.dropInvalidMessage(), reporter);
     this.config = config;
     this.putParameters = config.putParameters();

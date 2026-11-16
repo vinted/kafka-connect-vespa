@@ -2,21 +2,18 @@ package com.vinted.kafka.connect.vespa.feeders;
 
 import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import java.util.Collection;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.LongConsumer;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.RetriableException;
-import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Delivers batches, asking Connect to redeliver a batch that failed only with transient failures
- * while the budget lasts, and reports each record once across the redeliveries of its batch.
+ * while the budget lasts. Which records were reported is remembered across the redeliveries of a
+ * batch.
  */
 final class RetryBudget {
   private static final Logger log = LoggerFactory.getLogger(RetryBudget.class);
@@ -24,27 +21,21 @@ final class RetryBudget {
   private final int maxRetries;
   private final long initialBackoffMs;
   private final LongConsumer backOff;
-  // Written from feed client callback threads as well as the task thread.
-  private final Set<RecordCoordinates> reported = ConcurrentHashMap.newKeySet();
+  private final RecordReporter reporter;
   private int attempt;
 
   /**
    * Allows {@code maxRetries} redeliveries in a row, backing off from {@code initialBackoffMs}.
    *
    * @param backOff asks Connect to wait this many milliseconds before redelivering the batch
+   * @param reporter forgets which records it reported once a batch is delivered or given up on
    */
-  RetryBudget(int maxRetries, long initialBackoffMs, LongConsumer backOff) {
+  RetryBudget(
+      int maxRetries, long initialBackoffMs, LongConsumer backOff, RecordReporter reporter) {
     this.maxRetries = maxRetries;
     this.initialBackoffMs = initialBackoffMs;
     this.backOff = backOff;
-  }
-
-  /** Reports each record once across the redeliveries of its batch. */
-  ErrantRecordReporter reportingOnce(ErrantRecordReporter reporter) {
-    return (record, error) ->
-        reported.add(RecordCoordinates.of(record))
-            ? reporter.report(record, error)
-            : CompletableFuture.completedFuture(null);
+    this.reporter = reporter;
   }
 
   /**
@@ -100,6 +91,6 @@ final class RetryBudget {
 
   private void reset() {
     attempt = 0;
-    reported.clear();
+    reporter.forget();
   }
 }
