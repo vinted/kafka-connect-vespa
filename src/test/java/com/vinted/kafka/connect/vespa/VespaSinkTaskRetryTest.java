@@ -11,6 +11,7 @@ import ai.vespa.feed.client.Result;
 import com.vinted.kafka.connect.vespa.mocks.CallbackExecutor;
 import com.vinted.kafka.connect.vespa.mocks.FakeFeedClient;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -222,17 +223,24 @@ class VespaSinkTaskRetryTest {
 
   @Test
   void growsTheBackoffWithEachRetry() {
-    params.put(VespaSinkConfig.MAX_RETRIES_CONFIG, "2");
+    int retries = 10;
+    params.put(VespaSinkConfig.MAX_RETRIES_CONFIG, String.valueOf(retries));
     client.answerAll(failure(UNAVAILABLE));
     worker.start(params);
 
-    assertThrows(RetriableException.class, () -> worker.put(batch()));
-    assertThrows(RetriableException.class, () -> worker.put(batch()));
+    for (int retry = 1; retry <= retries; retry++) {
+      assertThrows(RetriableException.class, () -> worker.put(batch()));
+    }
 
     List<Long> backoffs = worker.backoffs();
-    assertEquals(2, backoffs.size());
-    assertTrue(backoffs.get(0) >= 0 && backoffs.get(0) < 2000, "first backoff " + backoffs.get(0));
-    assertTrue(backoffs.get(1) >= 0 && backoffs.get(1) < 4000, "second backoff " + backoffs.get(1));
+    assertEquals(retries, backoffs.size());
+    for (int retry = 1; retry <= retries; retry++) {
+      long backoff = backoffs.get(retry - 1);
+      assertTrue(backoff >= 0 && backoff < 1000L << retry, "retry " + retry + ": " + backoffs);
+    }
+    // Were the bound stuck at the first retry's, no backoff would reach it; with it growing, all
+    // nine later ones staying under it has a chance of 2^-45.
+    assertTrue(Collections.max(backoffs) >= 2000, "the backoff never grew: " + backoffs);
   }
 
   @Test
