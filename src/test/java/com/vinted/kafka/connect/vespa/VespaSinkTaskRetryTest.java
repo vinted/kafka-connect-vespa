@@ -126,7 +126,8 @@ class VespaSinkTaskRetryTest {
           withStackTraces.get(0));
       assertTrue(withStackTraces.get(0).contains("Status 401"), withStackTraces.get(0));
       assertTrue(
-          errors.stream().anyMatch(error -> error.contains(VespaSinkTask.class.getName())),
+          errors.stream()
+              .anyMatch(error -> error.contains("Failing the task after failing to feed")),
           String.join("\n", errors));
     }
   }
