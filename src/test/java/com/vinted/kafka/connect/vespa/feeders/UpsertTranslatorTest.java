@@ -95,7 +95,8 @@ class UpsertTranslatorTest {
 
   private UpsertTranslator translator() {
     return new UpsertTranslator(
-        new VespaSinkConfig(params), (record, error) -> CompletableFuture.completedFuture(null));
+        new VespaSinkConfig(params),
+        new RecordReporter((record, error) -> CompletableFuture.completedFuture(null)));
   }
 
   private SinkRecord record(String key, String value) {

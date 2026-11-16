@@ -25,25 +25,20 @@ final class FeedSession implements Closeable {
   private static final Logger log = LoggerFactory.getLogger(FeedSession.class);
 
   private final Supplier<FeedClient> clients;
-  private final OperationParameters documentJsonParameters;
   private Client client;
 
-  private FeedSession(Supplier<FeedClient> clients, OperationParameters documentJsonParameters) {
+  private FeedSession(Supplier<FeedClient> clients) {
     this.clients = clients;
-    this.documentJsonParameters = documentJsonParameters;
   }
 
   /**
    * Opens even when Vespa is unreachable; the client is then built when submitting.
    *
-   * @param documentJsonParameters the timeout, route and trace level of document JSON operations,
-   *     which the JSON feeder takes when built rather than per operation
    * @throws VespaFeedException when the client fails to build for a reason other than a transient
    *     failure
    */
-  static FeedSession open(
-      Supplier<FeedClient> clients, OperationParameters documentJsonParameters) {
-    FeedSession session = new FeedSession(clients, documentJsonParameters);
+  static FeedSession open(Supplier<FeedClient> clients) {
+    FeedSession session = new FeedSession(clients);
 
     try {
       session.client();
@@ -59,7 +54,9 @@ final class FeedSession implements Closeable {
 
   /**
    * Submits the operations through one working client, returning their results in order. An
-   * operation the client refuses fails its result.
+   * operation the client refuses fails its result. Every document JSON operation in a session has
+   * the same parameters, as the client's JSON feeder takes them when built rather than per
+   * operation.
    *
    * @throws VespaFeedException when the client fails to build
    */
@@ -102,7 +99,7 @@ final class FeedSession implements Closeable {
       client = null;
     }
 
-    client = new Client(build(), documentJsonParameters);
+    client = new Client(build());
     return client;
   }
 
@@ -125,12 +122,10 @@ final class FeedSession implements Closeable {
   /** One feed client, and the JSON feeder built on it when first needed. */
   static final class Client implements Closeable {
     private final FeedClient client;
-    private final OperationParameters documentJsonParameters;
     private JsonFeeder jsonFeeder;
 
-    private Client(FeedClient client, OperationParameters documentJsonParameters) {
+    private Client(FeedClient client) {
       this.client = client;
-      this.documentJsonParameters = documentJsonParameters;
     }
 
     CompletableFuture<Result> put(
@@ -142,8 +137,8 @@ final class FeedSession implements Closeable {
       return client.remove(documentId, parameters);
     }
 
-    CompletableFuture<Result> feed(String documentJson) {
-      return jsonFeeder().feedSingle(documentJson);
+    CompletableFuture<Result> feed(String documentJson, OperationParameters parameters) {
+      return jsonFeeder(parameters).feedSingle(documentJson);
     }
 
     @Override
@@ -161,15 +156,15 @@ final class FeedSession implements Closeable {
       return client.circuitBreakerState() == OPEN;
     }
 
-    private JsonFeeder jsonFeeder() {
+    private JsonFeeder jsonFeeder(OperationParameters parameters) {
       if (jsonFeeder != null) {
         return jsonFeeder;
       }
 
       JsonFeeder.Builder builder = JsonFeeder.builder(client);
-      documentJsonParameters.timeout().ifPresent(builder::withTimeout);
-      documentJsonParameters.route().ifPresent(builder::withRoute);
-      documentJsonParameters.tracelevel().ifPresent(builder::withTracelevel);
+      parameters.timeout().ifPresent(builder::withTimeout);
+      parameters.route().ifPresent(builder::withRoute);
+      parameters.tracelevel().ifPresent(builder::withTracelevel);
       jsonFeeder = builder.build();
       return jsonFeeder;
     }

@@ -51,14 +51,12 @@ public class VespaFeed implements Closeable {
       ErrantRecordReporter reporter,
       Supplier<FeedClient> clients,
       LongConsumer backOff) {
-    RetryBudget retryBudget =
-        new RetryBudget(config.maxRetries(), config.retryBackoffMs(), backOff);
-    ErrantRecordReporter reportingOnce = retryBudget.reportingOnce(reporter);
+    RecordReporter reportingOnce = new RecordReporter(reporter);
     return new VespaFeed(
-        retryBudget,
+        new RetryBudget(config.maxRetries(), config.retryBackoffMs(), backOff, reportingOnce),
         RecordTranslator.of(config, reportingOnce),
         new IndexingResultHandler(config.behaviorOnMalformedDoc(), reportingOnce),
-        FeedSession.open(clients, config.operationParameters()));
+        FeedSession.open(clients));
   }
 
   /**

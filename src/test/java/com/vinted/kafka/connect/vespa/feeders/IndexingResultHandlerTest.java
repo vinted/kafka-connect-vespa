@@ -159,21 +159,6 @@ class IndexingResultHandlerTest {
   }
 
   @Test
-  void logsFailureToHandleTheIndexingResultWithItsCause() {
-    Throwable failure = new FeedException(ID, "Status 400 executing POST: bad request");
-    when(reporter.report(any(), any())).thenThrow(toleranceExceeded(failure));
-
-    try (CapturedLogs logs = CapturedLogs.capture()) {
-      handle("IGNORE", CompletableFuture.failedFuture(failure));
-
-      String error = single(logs.errors());
-      assertTrue(error.contains("topic=topic partition=0 offset=7"), error);
-      assertTrue(error.contains("Tolerance exceeded in error handler"), error);
-      assertFalse(error.contains(VespaSinkConfig.BEHAVIOR_ON_MALFORMED_DOCS_CONFIG), error);
-    }
-  }
-
-  @Test
   void hasNoFailureForSuccessfulResults() {
     assertEquals(
         Optional.empty(),
@@ -188,7 +173,7 @@ class IndexingResultHandlerTest {
   private CompletableFuture<Optional<Failure>> handle(
       String behaviorOnMalformedDocs, CompletableFuture<Result> future) {
     return new IndexingResultHandler(
-            BehaviorOnMalformedDoc.valueOf(behaviorOnMalformedDocs), reporter)
+            BehaviorOnMalformedDoc.valueOf(behaviorOnMalformedDocs), new RecordReporter(reporter))
         .handle(record, future);
   }
 

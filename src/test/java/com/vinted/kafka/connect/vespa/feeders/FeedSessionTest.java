@@ -15,7 +15,6 @@ import ai.vespa.feed.client.FeedClient;
 import ai.vespa.feed.client.FeedException;
 import ai.vespa.feed.client.OperationParameters;
 import ai.vespa.feed.client.Result;
-import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentJson;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.Put;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.Remove;
@@ -23,11 +22,9 @@ import com.vinted.kafka.connect.vespa.mocks.FakeFeedClient;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.NoSuchFileException;
-import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.function.Supplier;
@@ -51,7 +48,7 @@ class FeedSessionTest {
 
   @Test
   void closesTheClientOnceWhenOnlyDocumentOperationsWereSent() throws IOException {
-    FeedSession session = FeedSession.open(() -> client, OperationParameters.empty());
+    FeedSession session = FeedSession.open(() -> client);
     join(session.submit(List.of(put(), new Remove(RECORD, ID, OperationParameters.empty()))));
 
     session.close();
@@ -61,7 +58,7 @@ class FeedSessionTest {
 
   @Test
   void closesTheClientOnceAfterSendingDocumentJsonOperations() throws IOException {
-    FeedSession session = FeedSession.open(() -> client, OperationParameters.empty());
+    FeedSession session = FeedSession.open(() -> client);
     join(session.submit(List.of(documentJson(), documentJson())));
 
     session.close();
@@ -70,29 +67,10 @@ class FeedSessionTest {
   }
 
   @Test
-  void sendsDocumentJsonOperationsWithTimeoutRouteAndTracelevelButNotConditionOrCreate() {
-    VespaSinkConfig config =
-        new VespaSinkConfig(
-            Map.of(
-                VespaSinkConfig.OPERATION_TIMEOUT_MS_CONFIG, "20",
-                VespaSinkConfig.OPERATION_ROUTE_CONFIG, "custom",
-                VespaSinkConfig.OPERATION_TRACELEVEL_CONFIG, "3",
-                VespaSinkConfig.OPERATION_CONDITION_CONFIG, "dt.locked == false",
-                VespaSinkConfig.OPERATION_CREATE_IF_NON_EXISTENT_CONFIG, "true"));
-    FeedSession session = FeedSession.open(() -> client, config.operationParameters());
-
-    join(session.submit(List.of(documentJson())));
-
-    OperationParameters expected =
-        OperationParameters.empty().timeout(Duration.ofMillis(20)).route("custom").tracelevel(3);
-    assertEquals(expected, client.operations().get(0).parameters);
-  }
-
-  @Test
   void replacesTheClientOnceItsCircuitBreakerOpens() {
     FakeFeedClient replacement = new FakeFeedClient();
     Clients clients = new Clients(client, replacement);
-    FeedSession session = FeedSession.open(clients, OperationParameters.empty());
+    FeedSession session = FeedSession.open(clients);
 
     client.circuitBreakerState(FeedClient.CircuitBreaker.State.HALF_OPEN);
     join(session.submit(List.of(put())));
@@ -108,8 +86,7 @@ class FeedSessionTest {
   void opensWhileVespaIsUnreachableAndConnectsWhenSubmitting() {
     Clients clients = new Clients(HANDSHAKE_FAILED, HANDSHAKE_FAILED, client);
 
-    FeedSession session =
-        assertDoesNotThrow(() -> FeedSession.open(clients, OperationParameters.empty()));
+    FeedSession session = assertDoesNotThrow(() -> FeedSession.open(clients));
     VespaFeedException thrown =
         assertThrows(VespaFeedException.class, () -> session.submit(List.of(put())));
     join(session.submit(List.of(put())));
@@ -126,8 +103,7 @@ class FeedSessionTest {
 
     VespaFeedException thrown =
         assertThrows(
-            VespaFeedException.class,
-            () -> FeedSession.open(new Clients(missingCertificate), OperationParameters.empty()));
+            VespaFeedException.class, () -> FeedSession.open(new Clients(missingCertificate)));
 
     assertSame(missingCertificate, thrown.getCause());
     assertEquals("fatal failure: NoSuchFileException: client.pem", thrown.getMessage());
@@ -136,9 +112,7 @@ class FeedSessionTest {
   @Test
   void failsToOpenWhenTheHandshakeFailsForNonTransientReason() {
     VespaFeedException thrown =
-        assertThrows(
-            VespaFeedException.class,
-            () -> FeedSession.open(new Clients(UNAUTHORIZED), OperationParameters.empty()));
+        assertThrows(VespaFeedException.class, () -> FeedSession.open(new Clients(UNAUTHORIZED)));
 
     assertSame(UNAUTHORIZED, thrown.getCause());
     assertFalse(thrown.isTransient());
@@ -148,7 +122,7 @@ class FeedSessionTest {
   void failsTheResultOfAnOperationTheClientRefuses() {
     IllegalStateException closed = new IllegalStateException("Client is closed");
     FakeFeedClient refusing = new FakeFeedClient().answerAll(refusal(closed));
-    FeedSession session = FeedSession.open(() -> refusing, OperationParameters.empty());
+    FeedSession session = FeedSession.open(() -> refusing);
 
     List<CompletableFuture<Result>> results = session.submit(List.of(put(), put()));
 
@@ -160,7 +134,7 @@ class FeedSessionTest {
 
   @Test
   void sendsNothingUntilSubmitting() {
-    FeedSession.open(() -> client, OperationParameters.empty());
+    FeedSession.open(() -> client);
 
     assertNothingSent(client);
   }
@@ -170,7 +144,7 @@ class FeedSessionTest {
   }
 
   private static DocumentJson documentJson() {
-    return new DocumentJson(RECORD, DOCUMENT_JSON);
+    return new DocumentJson(RECORD, DOCUMENT_JSON, OperationParameters.empty());
   }
 
   private static void join(List<CompletableFuture<Result>> results) {

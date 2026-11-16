@@ -1,24 +1,28 @@
 package com.vinted.kafka.connect.vespa.feeders;
 
+import ai.vespa.feed.client.OperationParameters;
+import com.vinted.kafka.connect.vespa.VespaSinkConfig;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentJson;
 import java.util.List;
 import java.util.Optional;
 import org.apache.kafka.connect.errors.DataException;
-import org.apache.kafka.connect.sink.ErrantRecordReporter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * RAW: the value is a Vespa document JSON operation, which carries its own id, condition and
- * create, so the key, the namespace, the document type, the condition and create are not used.
- * Tombstones carry no operation and are skipped.
+ * create, so the key, the namespace, the document type, the condition and create are not used; the
+ * timeout, route and trace level are. Tombstones carry no operation and are skipped.
  */
 final class RawTranslator extends RecordTranslator<DocumentJson> {
   private static final Logger log = LoggerFactory.getLogger(RawTranslator.class);
 
-  RawTranslator(boolean dropInvalidMessage, ErrantRecordReporter reporter) {
-    super(dropInvalidMessage, reporter);
+  private final OperationParameters parameters;
+
+  RawTranslator(VespaSinkConfig config, RecordReporter reporter) {
+    super(config.dropInvalidMessage(), reporter);
+    this.parameters = config.operationParameters();
   }
 
   @Override
@@ -34,7 +38,7 @@ final class RawTranslator extends RecordTranslator<DocumentJson> {
       throw new DataException("Value is empty; it must be a Vespa document operation.");
     }
 
-    return Optional.of(new DocumentJson(record, json));
+    return Optional.of(new DocumentJson(record, json, parameters));
   }
 
   /**

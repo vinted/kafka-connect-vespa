@@ -10,6 +10,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import ai.vespa.feed.client.OperationParameters;
 import com.vinted.kafka.connect.vespa.feeders.VespaOperation.DocumentJson;
 import java.util.List;
 import java.util.Optional;
@@ -53,7 +54,7 @@ class RecordTranslatorTest {
   }
 
   private RecordTranslator<DocumentJson> translator(boolean dropInvalidMessage) {
-    return new RecordTranslator<>(dropInvalidMessage, reporter) {
+    return new RecordTranslator<>(dropInvalidMessage, new RecordReporter(reporter)) {
       @Override
       Optional<DocumentJson> translate(SinkRecord record) {
         if ("invalid".equals(record.value())) {
@@ -64,7 +65,7 @@ class RecordTranslatorTest {
           throw BUG;
         }
 
-        return Optional.of(new DocumentJson(record, "{}"));
+        return Optional.of(new DocumentJson(record, "{}", OperationParameters.empty()));
       }
 
       @Override

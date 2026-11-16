@@ -16,6 +16,7 @@ import ai.vespa.feed.client.FeedException;
 import ai.vespa.feed.client.OperationParameters;
 import ai.vespa.feed.client.Result;
 import com.google.common.base.Strings;
+import com.vinted.kafka.connect.vespa.feeders.VespaFeedException;
 import com.vinted.kafka.connect.vespa.mocks.CallbackExecutor;
 import com.vinted.kafka.connect.vespa.mocks.FakeFeedClient;
 import java.time.Duration;
@@ -31,6 +32,8 @@ import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class VespaUpsertSinkTaskTest {
   private long offset = 1;
@@ -147,13 +150,37 @@ class VespaUpsertSinkTaskTest {
     worker.failingReports(new ConnectException("Tolerance exceeded in error handler"));
 
     worker.start(params);
+    SinkRecord rejected = record("set1", "{\"field\":\"value1\"}");
 
-    assertTimeoutPreemptively(
-        Duration.ofSeconds(10),
-        () ->
-            assertThrows(
-                ConnectException.class,
-                () -> worker.put(List.of(record("set1", "{\"field\":\"value1\"}")))));
+    VespaFeedException thrown =
+        assertTimeoutPreemptively(
+            Duration.ofSeconds(10),
+            () -> assertThrows(VespaFeedException.class, () -> worker.put(List.of(rejected))));
+    assertFatalFailureToReport(rejected, "FeedException", thrown);
+  }
+
+  @ParameterizedTest(name = "drop invalid message: {0}")
+  @ValueSource(booleans = {true, false})
+  void failsTheTaskWhenErrantRecordReporterThrowsOverInvalidMessage(boolean dropInvalidMessage) {
+    params.put(VespaSinkConfig.DROP_INVALID_MESSAGE_CONFIG, String.valueOf(dropInvalidMessage));
+    worker.failingReports(new ConnectException("Tolerance exceeded in error handler"));
+    SinkRecord invalid = record(null, "{\"field\":\"value1\"}");
+
+    worker.start(params);
+
+    try (CapturedLogs logs = CapturedLogs.capture()) {
+      VespaFeedException thrown =
+          assertThrows(
+              VespaFeedException.class,
+              () -> worker.put(List.of(invalid, record("set1", "{\"field\":\"value1\"}"))));
+
+      assertFatalFailureToReport(invalid, "DataException", thrown);
+      assertTrue(
+          logs.errors().stream().anyMatch(error -> error.contains("Failing the task")),
+          String.join("\n", logs.errors()));
+    }
+    assertEquals(0, worker.redeliveries());
+    assertNothingSent(client);
   }
 
   @Test
@@ -277,5 +304,16 @@ class VespaUpsertSinkTaskTest {
     }
 
     return new SinkRecord(topic, 1, keySchema, key, valueSchema, value, offset++);
+  }
+
+  private static void assertFatalFailureToReport(
+      SinkRecord record, String failure, VespaFeedException thrown) {
+    String message = thrown.getMessage();
+    assertFalse(thrown.isTransient(), message);
+    assertTrue(message.startsWith("fatal failure"), message);
+    assertTrue(message.contains("Failed to report record from topic="), message);
+    assertTrue(message.contains("offset=" + record.kafkaOffset()), message);
+    assertTrue(message.contains("which failed with " + failure), message);
+    assertTrue(message.contains("Tolerance exceeded in error handler"), message);
   }
 }
