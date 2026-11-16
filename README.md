@@ -31,7 +31,9 @@ configuration properties. If you need something more complex, consider using sin
 topic name.
 
 Only a null value removes a document; an empty or blank value is an invalid message, handled according to
-`vespa.drop.invalid.message`. Within a batch, only the last record for each document is sent to Vespa.
+`vespa.drop.invalid.message`. A value that converts but is not a JSON object, such as a JSON array, string or number,
+is sent as the document's `fields` and rejected by Vespa as a malformed document, handled according to
+`vespa.behavior.on.malformed.documents`. Within a batch, only the last record for each document is sent to Vespa.
 `vespa.operation.condition` applies to puts and removes, and `vespa.operation.create.if.non.existent` only to puts.
 
 #### RAW
@@ -89,6 +91,7 @@ operation, such as `put` and `fields`. Avro types map to Vespa JSON as follows:
 | timestamp-millis | milliseconds since the epoch |
 | timestamp-micros, time-micros, local-timestamp-millis | the raw long, in the unit of the logical type |
 | optional field set to null | left out of the document |
+| null array item or map value | rejected by Vespa as a malformed document |
 
 Vespa has no date type, so dates and times are written as numbers; use the `TimestampConverter` single message
 transform to change their unit. Unions of more than one non-null type, and Avro fields that are not in the Vespa schema,
