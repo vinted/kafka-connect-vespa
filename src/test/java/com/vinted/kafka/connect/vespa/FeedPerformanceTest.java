@@ -4,70 +4,44 @@ import ai.vespa.feed.client.DocumentId;
 import ai.vespa.feed.client.FeedClient;
 import ai.vespa.feed.client.Result;
 import org.apache.kafka.connect.sink.SinkRecord;
-import com.vinted.kafka.connect.vespa.mocks.FakeFeedClient;
-import com.vinted.kafka.connect.vespa.mocks.MockVespaServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.lang.management.ManagementFactory;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * Feeds generated records through {@link VespaSinkTask} into a running Vespa, the way a Connect worker does, and
- * reports throughput, put latency and CPU. Run against the application in {@code src/test/resources/performance/app}
- * with {@code scripts/performance.sh}, or with {@code -Dvespa.perf.endpoint=...} against one already running. With
- * {@code -Dvespa.perf.endpoint=mock} it feeds a local server that acknowledges every operation at once instead, which
- * measures the connector and the feed client alone, and with {@code -Dvespa.perf.endpoint=stub} the task gets a
- * feed client that succeeds every operation in memory, which measures the connector alone.
+ * Feeds generated records through {@link VespaSinkTask} into the {@link PerformanceTarget}, the way a Connect worker
+ * does, and reports throughput, put latency and CPU. Run against the application in
+ * {@code src/test/resources/performance/app} with {@code scripts/performance.sh}, or with
+ * {@code -Dvespa.perf.endpoint=...} against one already running, a mock server or a stub feed client.
  */
 @Tag("performance")
 class FeedPerformanceTest {
-    private static final String ENDPOINT = System.getProperty("vespa.perf.endpoint");
     private static final int RECORDS = Integer.getInteger("vespa.perf.records", 200_000);
     private static final int WARMUP_RECORDS = Integer.getInteger("vespa.perf.warmup.records", 20_000);
     private static final int BATCH = Integer.getInteger("vespa.perf.batch", 500);
-    private static final boolean STUB = "stub".equals(ENDPOINT);
-    // Feeding the same records again only makes sense where nothing is indexed.
-    private static final int PASSES = STUB ? Integer.getInteger("vespa.perf.passes", 1) : 1;
 
-    private String endpoint;
-    private VespaAdmin vespa;
-    private MockVespaServer mock;
+    private PerformanceTarget target;
 
     @BeforeEach
     void before() throws Exception {
-        assumeTrue(ENDPOINT != null, "set vespa.perf.endpoint to run the feed benchmark");
-
-        if (STUB) {
-            endpoint = "http://localhost:1";
-            return;
-        }
-
-        if ("mock".equals(ENDPOINT)) {
-            Duration latency = Duration.ofNanos(Long.getLong("vespa.perf.mock.latency.micros", 0) * 1000);
-            mock = MockVespaServer.http(MockVespaServer.acknowledgeAfter(latency));
-            endpoint = mock.url();
-            return;
-        }
-
-        endpoint = ENDPOINT;
-        vespa = new VespaAdmin(endpoint);
-        vespa.deleteAll();
+        target = PerformanceTarget.fromSystemProperties();
+        assumeTrue(target != null, "set vespa.perf.endpoint to run the feed benchmark");
+        target.clear();
     }
 
     @AfterEach
     void after() throws Exception {
-        if (mock != null) {
-            mock.close();
+        if (target != null) {
+            target.close();
         }
     }
 
@@ -88,59 +62,44 @@ class FeedPerformanceTest {
 
     @Test
     void feedClientAlone() throws Exception {
-        assumeTrue(!STUB, "the stub replaces the feed client");
-        VespaSinkConfig config = new VespaSinkConfig(PerformanceRecords.connectorProps(endpoint, Map.of()));
+        assumeTrue(target.usesFeedClient(), "the stub replaces the feed client");
+        VespaSinkConfig config = new VespaSinkConfig(target.connectorProps(Map.of()));
         List<PerformanceRecords.Document> documents = PerformanceRecords.documents(WARMUP_RECORDS + RECORDS);
 
         try (FeedClient client = config.feedClient()) {
             putAll(client, config, documents.subList(0, WARMUP_RECORDS));
-            clear();
+            target.clear();
 
             Measurement measurement = Measurement.start();
             putAll(client, config, documents.subList(WARMUP_RECORDS, documents.size()));
             measurement.stop("feed client alone", RECORDS, List.of());
         }
 
-        assertIndexed(RECORDS);
+        target.assertIndexed(RECORDS);
     }
 
     private void run(String name, Map<String, String> overrides, PerformanceRecords.Factory factory) throws Exception {
         List<PerformanceRecords.Document> documents = PerformanceRecords.documents(WARMUP_RECORDS + RECORDS);
         List<SinkRecord> warmup = factory.records(documents.subList(0, WARMUP_RECORDS), 0);
         List<SinkRecord> measured = factory.records(documents.subList(WARMUP_RECORDS, documents.size()), WARMUP_RECORDS);
-
-        VespaSinkTask task = STUB ? new VespaSinkTask(config -> FakeFeedClient.acknowledgingAll()) : new VespaSinkTask();
-        ConnectWorker worker = new ConnectWorker(task).start(PerformanceRecords.connectorProps(endpoint, overrides));
+        int passes = target.passes();
+        ConnectWorker worker = target.start(overrides);
 
         try {
             worker.deliver(warmup, BATCH);
-            clear();
+            target.clear();
 
             Measurement measurement = Measurement.start();
             List<Long> latencies = new ArrayList<>();
-            for (int pass = 0; pass < PASSES; pass++) {
+            for (int pass = 0; pass < passes; pass++) {
                 latencies.addAll(worker.deliver(measured, BATCH));
             }
-            measurement.stop(name, RECORDS * PASSES, latencies);
+            measurement.stop(name, RECORDS * passes, latencies);
         } finally {
             worker.stop();
         }
 
-        assertIndexed(RECORDS);
-    }
-
-    private void clear() throws Exception {
-        if (vespa != null) {
-            vespa.deleteAll();
-        }
-    }
-
-    private void assertIndexed(int records) throws Exception {
-        if (vespa == null || Boolean.getBoolean("vespa.perf.connector.vespa.dryrun") || Boolean.getBoolean("vespa.perf.connector.vespa.speed.test")) {
-            return;
-        }
-
-        assertEquals(records, vespa.count());
+        target.assertIndexed(RECORDS);
     }
 
     /** Puts every document with all of them in flight, sending those that failed again, as the task's retries do. */
@@ -149,7 +108,7 @@ class FeedPerformanceTest {
         while (!pending.isEmpty()) {
             List<CompletableFuture<Result>> results = new ArrayList<>(pending.size());
             for (PerformanceRecords.Document document : pending) {
-                results.add(client.put(DocumentId.of("perf", "item", document.key),
+                results.add(client.put(DocumentId.of(PerformanceRecords.NAMESPACE, PerformanceRecords.DOCUMENT_TYPE, document.key),
                         "{\"fields\":" + document.json + "}", config.putParameters()));
             }
 
