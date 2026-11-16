@@ -65,8 +65,7 @@ public class VespaFeed implements Closeable {
         retryBudget.deliver(records, this::feed);
     }
 
-    /** Feeds the records once, without retrying. */
-    void feed(Collection<SinkRecord> records) {
+    private void feed(Collection<SinkRecord> records) {
         List<? extends VespaOperation> operations = translator.operations(records);
         List<CompletableFuture<Result>> results = session.submit(operations);
         List<CompletableFuture<Optional<Failure>>> outcomes = IntStream.range(0, operations.size())

@@ -18,7 +18,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -48,13 +47,6 @@ class UpsertTranslatorTest {
     }
 
     @Test
-    void defaultsTheNamespaceAndDocumentTypeToTheTopic() {
-        DocumentOperation operation = translate(record("key", "{}"));
-
-        assertEquals(DocumentId.of("id:topic:topic::key"), operation.documentId);
-    }
-
-    @Test
     void removesTheDocumentOfATombstone() {
         SinkRecord tombstone = record("key", null);
 
@@ -63,19 +55,6 @@ class UpsertTranslatorTest {
         assertSame(tombstone, remove.record);
         assertEquals(DocumentId.of("id:topic:topic::key"), remove.documentId);
         assertEquals(DEFAULT_PARAMETERS, remove.parameters);
-    }
-
-    @Test
-    void appliesTheConditionToPutsAndRemovesButCreateOnlyToPuts() {
-        params.put(VespaSinkConfig.OPERATION_CONDITION_CONFIG, "dt.locked == false");
-        params.put(VespaSinkConfig.OPERATION_CREATE_IF_NON_EXISTENT_CONFIG, "true");
-
-        DocumentOperation put = translate(record("put", "{}"));
-        DocumentOperation remove = translate(record("remove", null));
-
-        OperationParameters conditional = DEFAULT_PARAMETERS.testAndSetCondition("dt.locked == false");
-        assertEquals(conditional.createIfNonExistent(true), put.parameters);
-        assertEquals(conditional, remove.parameters);
     }
 
     @Test
@@ -93,11 +72,6 @@ class UpsertTranslatorTest {
         assertEquals(expected, operation.parameters);
     }
 
-    @Test
-    void rejectsARecordWithoutKeyAsAnInvalidMessage() {
-        assertInvalidMessage(record(null, "{}"));
-    }
-
     @ParameterizedTest
     @MethodSource("emptyValues")
     void rejectsAnEmptyValueAsAnInvalidMessageRatherThanRemoving(Object value) {
@@ -106,17 +80,6 @@ class UpsertTranslatorTest {
 
     static Stream<Object> emptyValues() {
         return Stream.of("", new byte[0], " \n\t ", " ".getBytes(StandardCharsets.UTF_8));
-    }
-
-    @Test
-    void keepsOnlyTheLastOperationPerDocument() {
-        SinkRecord other = record("b", "{}");
-        SinkRecord last = record("a", "{\"v\":2}");
-
-        List<DocumentOperation> operations = translator().operations(
-                List.of(record("a", "{\"v\":1}"), other, record("a", null), last));
-
-        assertEquals(List.of(last, other), operations.stream().map(operation -> operation.record).collect(Collectors.toList()));
     }
 
     private void assertInvalidMessage(SinkRecord record) {

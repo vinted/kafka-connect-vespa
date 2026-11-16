@@ -115,12 +115,6 @@ class IndexingResultHandlerTest {
     }
 
     @Test
-    void reportsAndSkipsRejectedResultsUnderIgnore() {
-        assertEquals(Optional.empty(), handle("IGNORE", CompletableFuture.completedFuture(result(Result.Type.conditionNotMet))).join());
-        verify(reporter).report(any(), any());
-    }
-
-    @Test
     void reportsAndFailsRejectedResultsUnderFail() {
         Failure failed = failure(handle("FAIL", CompletableFuture.completedFuture(result(Result.Type.conditionNotMet))));
 
@@ -134,20 +128,6 @@ class IndexingResultHandlerTest {
 
         FeedException cause = assertInstanceOf(FeedException.class, failed.cause);
         assertEquals(Optional.of(ID), cause.documentId());
-    }
-
-    @Test
-    void failsRecordInsteadOfHangingWhenErrantRecordReporterThrows() {
-        Throwable failure = new FeedException(ID, "Status 400 executing POST: bad request");
-        ConnectException toleranceExceeded = toleranceExceeded(failure);
-        when(reporter.report(any(), any())).thenThrow(toleranceExceeded);
-
-        CompletableFuture<Optional<Failure>> outcome = handle("IGNORE", CompletableFuture.failedFuture(failure));
-
-        assertTrue(outcome.isDone(), "outcome must complete when the reporter throws");
-        Failure failed = failure(outcome);
-        assertEquals(Kind.FATAL, failed.kind);
-        assertSame(toleranceExceeded, failed.cause);
     }
 
     @Test

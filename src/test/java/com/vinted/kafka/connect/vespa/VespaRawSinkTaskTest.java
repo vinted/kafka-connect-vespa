@@ -10,6 +10,8 @@ import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Duration;
 import java.util.*;
@@ -19,6 +21,7 @@ import static com.vinted.kafka.connect.vespa.mocks.FeedAssertions.assertSent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class VespaRawSinkTaskTest {
     private long offset = 1;
@@ -153,6 +156,18 @@ public class VespaRawSinkTaskTest {
 
         assertEquals(List.of(invalid), worker.reported());
         assertInstanceOf(DataException.class, worker.reports().get(0).error);
+        assertNothingSent(client);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", " \n\t "})
+    void reportsAndFailsOnAnEmptyValue(String value) {
+        SinkRecord empty = new SinkRecord("topic", 1, Schema.STRING_SCHEMA, "key", Schema.STRING_SCHEMA, value, offset++);
+
+        ConnectException thrown = assertThrows(ConnectException.class, () -> worker.put(List.of(empty)));
+
+        assertTrue(thrown.getMessage().startsWith("invalid message: "), thrown.getMessage());
+        assertEquals(List.of(empty), worker.reported());
         assertNothingSent(client);
     }
 
